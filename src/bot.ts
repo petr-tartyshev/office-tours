@@ -114,9 +114,9 @@ bot.command("menu", (ctx) => {
   return ctx.reply(
     "Меню:",
     Markup.keyboard([
-      ["/schedule"],
-      ["/about_tour", "/faq"],
-      ["/question"],
+      ["Расписание"],
+      ["Об экскурсиях", "FAQ"],
+      ["Задать вопрос"],
     ])
       .resize()
       .persistent()
@@ -216,6 +216,25 @@ bot.command("schedule", (ctx) => {
     "Выберите, для кого расписание:\n- /schedule_group_leader\n- /schedule_student"
   );
 });
+
+// Кнопки в меню (русские названия)
+bot.hears("Расписание", (ctx) => {
+  return ctx.reply(
+    "Выберите, для кого расписание:\n- /schedule_group_leader\n- /schedule_student"
+  );
+});
+
+bot.hears("Об экскурсиях", (ctx) => {
+  return ctx.reply("об экскурсиях");
+});
+
+bot.hears("FAQ", (ctx) =>
+  ctx.reply("FAQ (здесь позже появятся вопросы и ответы)")
+);
+
+bot.hears("Задать вопрос", (ctx) =>
+  ctx.reply("Напишите ваш вопрос текстом, мы обязательно ответим позже.")
+);
 
 bot.command("faq", (ctx) =>
   ctx.reply("FAQ (здесь позже появятся вопросы и ответы)")
