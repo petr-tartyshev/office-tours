@@ -197,8 +197,13 @@ bot.action(/slot_student_.+/, (ctx) => {
 
   ctx.answerCbQuery();
 
-  setStudentFlowStep(ctx, "surname");
-  ctx.session!.data!.slot = slot;
+  // Явно работаем через session как через any, чтобы не мешала типизация
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.flow = "student";
+  s.step = "surname";
+  s.data = s.data || {};
+  s.data.slot = slot;
+  (ctx as any).session = s;
 
   return ctx.reply(
     `Вы выбрали слот: ${slot}\n\n/student_surname\nФамилия`
