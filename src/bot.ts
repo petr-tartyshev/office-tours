@@ -15,7 +15,7 @@ bot.start((ctx) =>
   ctx.reply("Привет! Я бот для записи на экскурсии в офис Авито.")
 );
 
-// Минимальный функционал: на любой текст отвечаем текущей датой и временем
+// Минимальный функционал STAGE-бота: на любой текст отвечаем датой, временем и ником пользователя
 bot.on("text", (ctx) => {
   const now = new Date();
   const formatted = now.toLocaleString("ru-RU", {
@@ -27,7 +27,24 @@ bot.on("text", (ctx) => {
     second: "2-digit"
   });
 
-  return ctx.reply(`Текущая дата и время: ${formatted}`);
+  const from = ctx.from;
+
+  let nick = "неизвестный пользователь";
+
+  if (from) {
+    if (from.username) {
+      nick = `@${from.username}`;
+    } else {
+      const nameParts = [from.first_name, from.last_name].filter(Boolean);
+      if (nameParts.length > 0) {
+        nick = nameParts.join(" ");
+      }
+    }
+  }
+
+  return ctx.reply(
+    `Текущая дата и время: ${formatted}\nТвой ник: ${nick}`
+  );
 });
 
 bot.launch().then(() => {
