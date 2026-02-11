@@ -39,12 +39,7 @@ interface SessionData {
   step?: RegistrationStep;
   data?: RegistrationData;
 }
-
-interface MyContextSession {
-  session?: SessionData;
-}
-
-const bot = new Telegraf<MyContextSession>(token);
+const bot = new Telegraf(token as string);
 
 bot.use(
   session({
