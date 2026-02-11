@@ -133,19 +133,19 @@ bot.command("info_egistration", (ctx) => {
 
 bot.command("user_info", (ctx) => {
   return ctx.reply(
-    "Уточните, вы руководитель группы или студент",
-    Markup.keyboard([["Руководитель группы", "Студент"]]).resize()
+    "Уточните, вы руководитель группы или студент.\n" +
+      'Ответьте одним словом: "Руководитель" или "Студент".'
   );
 });
 
-bot.hears("Руководитель группы", (ctx) => {
+bot.hears(/^(Руководитель|руководитель)/i, (ctx) => {
   resetSession(ctx);
   return ctx.reply(
     "Вы выбрали: Руководитель группы.\nИспользуйте команду /schedule_group_leader, чтобы посмотреть расписание."
   );
 });
 
-bot.hears("Студент", (ctx) => {
+bot.hears(/^(Студент|студент)/i, (ctx) => {
   resetSession(ctx);
   return ctx.reply(
     "Вы выбрали: Студент.\nИспользуйте команду /schedule_student, чтобы посмотреть расписание."
@@ -310,19 +310,16 @@ bot.on("text", (ctx, next) => {
       s.data.phone = text;
       setStudentFlowStep(ctx, "university");
       return ctx.reply(
-        "/student_university\nВыберите Университет",
-        Markup.keyboard([["МГУ", "ФИЗ ТЕХ"], ["МИССИС", "ВШЭ"]]).resize()
+        "/student_university\nВыберите Университет.\n" +
+          "Введите одним сообщением: МГУ, ФИЗТЕХ, МИССИС или ВШЭ."
       );
 
     case "university":
       s.data.university = text;
       setStudentFlowStep(ctx, "faculty");
       return ctx.reply(
-        "/student_faculty\nВыберите ваш факультет",
-        Markup.keyboard([
-          ["Прикладная математика", "Компьютерные науки"],
-          ["Маркетинг и ПР"],
-        ]).resize()
+        "/student_faculty\nВыберите ваш факультет.\n" +
+          "Введите одним сообщением: Прикладная математика, Компьютерные науки или Маркетинг и ПР."
       );
 
     case "faculty":
@@ -396,15 +393,6 @@ bot
   .launch()
   .then(async () => {
     try {
-      // Настраиваем меню команд (как в примере Telegram)
-      await bot.telegram.setMyCommands([
-        { command: "start", description: "Перезапустить бота" },
-        { command: "schedule", description: "Расписание" },
-        { command: "about_tour", description: "Об экскурсиях" },
-        { command: "faq", description: "FAQ" },
-        { command: "question", description: "Задать вопрос" },
-      ]);
-
       const me = await bot.telegram.getMe();
       console.log(
         `Excursion bot started as @${me.username} (id=${me.id.toString()})`
