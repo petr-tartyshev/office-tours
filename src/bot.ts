@@ -95,13 +95,15 @@ const formatRegistrationSummary = (data: RegistrationData): string => {
 };
 
 // Команды
-bot.start((ctx) => ctx.reply("привет!", Markup.removeKeyboard()));
+bot.start((ctx) =>
+  ctx.reply("Привет! Это экскурсии в офис.", Markup.removeKeyboard())
+);
 
 bot.command("approval", (ctx) => {
   return ctx.reply(
-    "Чтобы продолжить, нужно согласиться с правилом 1 и условиями 1",
+    "Чтобы продолжить, нужно согласиться с правилом 1 и условиями 1.",
     Markup.inlineKeyboard([
-      Markup.button.callback("Ознакомился и согласен", "approval_accept"),
+      Markup.button.callback("Согласен", "approval_accept"),
     ])
   );
 });
@@ -110,44 +112,68 @@ bot.action("approval_accept", (ctx) =>
   ctx.editMessageText("Спасибо! Можно продолжать 🚀")
 );
 
+// Главное меню
+bot.command("main", (ctx) => {
+  return ctx.reply(
+    "Об экскурсиях в офис.",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("Расписание", "main_schedule_info")],
+      [
+        Markup.button.callback("Подробнее об экскурсиях", "main_about_tour"),
+        Markup.button.callback("FAQ", "main_faq"),
+      ],
+      [Markup.button.callback("Задать вопрос", "main_question")],
+    ])
+  );
+});
+
+// Оставим /menu как синоним /main
 bot.command("menu", (ctx) => {
   return ctx.reply(
-    [
-      "Меню команд:",
-      "/schedule — Расписание",
-      "/about_tour — Об экскурсиях",
-      "/faq — FAQ",
-      "/question — Задать вопрос",
-    ].join("\n"),
-    Markup.removeKeyboard()
+    "Об экскурсиях в офис.",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("Расписание", "main_schedule_info")],
+      [
+        Markup.button.callback("Подробнее об экскурсиях", "main_about_tour"),
+        Markup.button.callback("FAQ", "main_faq"),
+      ],
+      [Markup.button.callback("Задать вопрос", "main_question")],
+    ])
   );
 });
 
 bot.command("about_tour", (ctx) => {
-  return ctx.reply("об экскурсиях", Markup.removeKeyboard());
+  return ctx.reply("Подробная информация об экскурсиях", Markup.removeKeyboard());
 });
 
 bot.command("info_egistration", (ctx) => {
   return ctx.reply("Дополнительная информация про экскурсии");
 });
 
-bot.command("user_info", (ctx) => {
+const sendRoleChoice = (ctx: any) => {
   return ctx.reply(
-    "Уточните, вы руководитель группы или студент.\n" +
-      'Ответьте одним словом: "Руководитель" или "Студент".'
+    "Уточните вы руководитель группы или студент?",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("Руководитель группы", "role_group_leader")],
+      [Markup.button.callback("Студент", "role_student")],
+    ])
   );
-});
+};
 
-bot.hears(/^(Руководитель|руководитель)/i, (ctx) => {
+bot.command("user_info", (ctx) => sendRoleChoice(ctx));
+
+bot.action("role_group_leader", (ctx) => {
+  ctx.answerCbQuery();
   resetSession(ctx);
-  return ctx.reply(
+  return ctx.editMessageText(
     "Вы выбрали: Руководитель группы.\nИспользуйте команду /schedule_group_leader, чтобы посмотреть расписание."
   );
 });
 
-bot.hears(/^(Студент|студент)/i, (ctx) => {
+bot.action("role_student", (ctx) => {
+  ctx.answerCbQuery();
   resetSession(ctx);
-  return ctx.reply(
+  return ctx.editMessageText(
     "Вы выбрали: Студент.\nИспользуйте команду /schedule_student, чтобы посмотреть расписание."
   );
 });
@@ -167,7 +193,7 @@ const studentSlots = [
 
 bot.command("schedule_group_leader", (ctx) => {
   return ctx.reply(
-    "Доступные слоты для руководителей группы:",
+    "Доступные слоты: 20 февраля, 15:00 (создано несколько слотов):",
     Markup.inlineKeyboard(
       groupLeaderSlots.map((slot) => [
         Markup.button.callback(slot, `slot_group_${slot}`),
@@ -178,7 +204,7 @@ bot.command("schedule_group_leader", (ctx) => {
 
 bot.command("schedule_student", (ctx) => {
   return ctx.reply(
-    "Доступные слоты для студентов:",
+    "Доступные слоты: 25 февраля, 15:00 (создано несколько слотов):",
     Markup.inlineKeyboard(
       studentSlots.map((slot) => [
         Markup.button.callback(slot, `slot_student_${slot}`),
@@ -206,7 +232,7 @@ bot.action(/slot_student_.+/, (ctx) => {
   (ctx as any).session = s;
 
   return ctx.reply(
-    `Вы выбрали слот: ${slot}\n\n/student_surname\nФамилия`
+    `Вы выбрали слот: ${slot}\n\nВаша фамилия`
   );
 });
 
@@ -219,34 +245,77 @@ bot.command("schedule", (ctx) => {
 });
 
 bot.command("faq", (ctx) =>
-  ctx.reply("FAQ (здесь позже появятся вопросы и ответы)", Markup.removeKeyboard())
+  ctx.reply("Ответы на самые частые вопросы", Markup.removeKeyboard())
 );
 
 bot.command("question", (ctx) =>
   ctx.reply(
-    "Напишите ваш вопрос текстом, мы обязательно ответим позже.",
+    "Напишите свой вопрос в чат, менеджер ответит в ближайшее время",
     Markup.removeKeyboard()
   )
 );
 
 bot.command("reminder_3day", (ctx) => {
   const data = (ctx as any).session?.data as RegistrationData | undefined;
-  const slot = data?.slot ?? "дата и время не выбраны";
-  return ctx.reply(`Напоминаем про экскурсию в Офис: ${slot}`);
+  const slot = data?.slot ?? "[дата и время не выбраны]";
+  return ctx.reply(
+    `Напоминаем про экскурсию в Офис: ${slot}`,
+    Markup.inlineKeyboard([
+      [Markup.button.callback("Подтвердить", "reminder3_confirm")],
+      [Markup.button.callback("Изменить", "reminder3_change")],
+      [Markup.button.callback("Задать вопрос", "reminder3_question")],
+    ])
+  );
+});
+
+bot.action("reminder3_confirm", (ctx) => {
+  ctx.answerCbQuery();
+  return ctx.editMessageText("Спасибо, что подтвердили участие в экскурсии!");
+});
+
+bot.action("reminder3_change", (ctx) => {
+  ctx.answerCbQuery();
+  return ctx.editMessageText(
+    "Если вы хотите изменить дату или время экскурсии, напишите, пожалуйста, менеджеру или пройдите запись заново."
+  );
+});
+
+bot.action("reminder3_question", (ctx) => {
+  ctx.answerCbQuery();
+  return ctx.reply(
+    "Напишите свой вопрос в чат, менеджер ответит в ближайшее время"
+  );
 });
 
 bot.command("visiting_rules", (ctx) =>
-  ctx.reply("Правила посещения офиса")
+  ctx.reply(
+    "Правила посещения офиса",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("Ознакомлен", "rules_ack")],
+    ])
+  )
 );
+
+bot.action("rules_ack", (ctx) => {
+  ctx.answerCbQuery("Спасибо! Правила посещения офиса приняты.");
+  return ctx.editMessageReplyMarkup(undefined);
+});
 
 bot.command("reminder_9am", (ctx) => {
   const data = (ctx as any).session?.data as RegistrationData | undefined;
-  const slot = data?.slot ?? "дата и время не выбраны";
+  const slot = data?.slot ?? "[дата и время не выбраны]";
   return ctx.reply(`Напоминаем про экскурсию в Офис: ${slot}`);
 });
 
 bot.command("feedback_form", (ctx) =>
-  ctx.reply("Спасибо, что пришли в гости! Заполните форму ОС.")
+  ctx.reply(
+    "Спасибо, что пришли в гости! Заполните форму",
+    Markup.inlineKeyboard([
+      [
+        Markup.button.url("Заполнить форму", "https://t.me/petrtar"),
+      ],
+    ])
+  )
 );
 
 // Специальная стейдж-команда: удалить данные пользователя и остановить бота
@@ -282,55 +351,47 @@ bot.on("text", (ctx, next) => {
     case "surname":
       s.data.surname = text;
       setStudentFlowStep(ctx, "name");
-      return ctx.reply("/student_name\nИмя");
+      return ctx.reply("Ваше имя");
 
     case "name":
       s.data.name = text;
       setStudentFlowStep(ctx, "patronymic");
-      return ctx.reply("/student_patronymic\nОтчество");
+      return ctx.reply("Ваше отчество");
 
     case "patronymic":
       s.data.patronymic = text;
       setStudentFlowStep(ctx, "birthDate");
-      return ctx.reply(
-        "/student_birth_date\nДень рождения (формат 00.00.0000)"
-      );
+      return ctx.reply("Дата рождения (формат 00.00.0000)");
 
     case "birthDate":
       s.data.birthDate = text;
       setStudentFlowStep(ctx, "email");
-      return ctx.reply("/student_email\nВаша почта");
+      return ctx.reply("Ваша почта");
 
     case "email":
       s.data.email = text;
       setStudentFlowStep(ctx, "phone");
-      return ctx.reply("/student_phone\nВаш телефон в формате 79*********");
+      return ctx.reply("Ваш номер телефона (формат 79*********)");
 
     case "phone":
       s.data.phone = text;
       setStudentFlowStep(ctx, "university");
       return ctx.reply(
-        "/student_university\nВыберите Университет.\n" +
-          "Введите одним сообщением: МГУ, ФИЗТЕХ, МИССИС или ВШЭ."
+        "Ваш университет",
+        Markup.inlineKeyboard([
+          [
+            Markup.button.callback("МГУ", "university_МГУ"),
+            Markup.button.callback("ФИЗ ТЕХ", "university_ФИЗ ТЕХ"),
+          ],
+          [Markup.button.callback("ВШЭ", "university_ВШЭ")],
+        ])
       );
 
     case "university":
-      s.data.university = text;
-      setStudentFlowStep(ctx, "faculty");
-      return ctx.reply(
-        "/student_faculty\nВыберите ваш факультет.\n" +
-          "Введите одним сообщением: Прикладная математика, Компьютерные науки или Маркетинг и ПР."
-      );
-
     case "faculty":
-      s.data.faculty = text;
-      setStudentFlowStep(ctx, "confirm");
-      const summary = formatRegistrationSummary(s.data);
+      // Для этих шагов данные приходят через нажатие кнопок, а не текстом
       return ctx.reply(
-        `/data_verification\nДавайте сверим данные:\n\n${summary}\n\nЕсли они верны, нажмите кнопку «Подтвердить».`,
-        Markup.inlineKeyboard([
-          Markup.button.callback("Подтвердить", "confirm_registration"),
-        ])
+        "Пожалуйста, выберите вариант из кнопок ниже, а не вводите текстом."
       );
 
     default:
@@ -339,6 +400,68 @@ bot.on("text", (ctx, next) => {
         "Что-то пошло не так, давайте начнём сначала. Используйте /schedule_student, чтобы выбрать слот."
       );
   }
+});
+
+// Обработка выбора университета и факультета через inline-кнопки
+bot.action(/university_.+/, (ctx) => {
+  const raw =
+    ctx.callbackQuery && "data" in ctx.callbackQuery
+      ? (ctx.callbackQuery.data as string)
+      : "";
+  const uni = raw.replace("university_", "");
+
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.flow = "student";
+  s.step = "faculty";
+  s.data = s.data || {};
+  s.data.university = uni;
+  (ctx as any).session = s;
+
+  return ctx.reply(
+    "Ваш факультет",
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          "Прикладная математика",
+          "faculty_Прикладная математика"
+        ),
+      ],
+      [Markup.button.callback("Маркетинг и PR", "faculty_Маркетинг и PR")],
+      [
+        Markup.button.callback(
+          "Информационная безопасность",
+          "faculty_Информационная безопасность"
+        ),
+      ],
+    ])
+  );
+});
+
+bot.action(/faculty_.+/, (ctx) => {
+  const raw =
+    ctx.callbackQuery && "data" in ctx.callbackQuery
+      ? (ctx.callbackQuery.data as string)
+      : "";
+  const faculty = raw.replace("faculty_", "");
+
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.flow = "student";
+  s.step = "confirm";
+  s.data = s.data || {};
+  s.data.faculty = faculty;
+  (ctx as any).session = s;
+
+  const summary = formatRegistrationSummary(s.data);
+  return ctx.reply(
+    `Давайте сверим данные:\n\n${summary}\n\nЕсли они верны, нажмите кнопку «Подтвердить».`,
+    Markup.inlineKeyboard([
+      Markup.button.callback("Подтвердить", "confirm_registration"),
+    ])
+  );
 });
 
 bot.action("confirm_registration", (ctx) => {
@@ -358,34 +481,6 @@ bot.action("confirm_registration", (ctx) => {
 
   return ctx.editMessageText(
     `Заявка подтверждена!\n\n${summary}\n\nСпасибо, что записались на экскурсию.`
-  );
-});
-
-// Фолбэк: если нет активного сценария и это не команда, отвечаем датой/временем и ником
-bot.on("message", (ctx) => {
-  const msg: any = ctx.message;
-
-  // Если это текстовая команда (/start, /approval и т.п.) — ничего не делаем,
-  // чтобы не перебивать ответы команд.
-  if (msg && typeof msg.text === "string" && msg.text.startsWith("/")) {
-    return;
-  }
-
-  const now = new Date();
-  const formatted = now.toLocaleString("ru-RU", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-
-  const nick = formatUserNick(ctx);
-
-  return ctx.reply(
-    `Текущая дата и время: ${formatted}\nТвой ник: ${nick}`,
-    Markup.removeKeyboard()
   );
 });
 
