@@ -249,6 +249,24 @@ bot.command("feedback_form", (ctx) =>
   ctx.reply("Спасибо, что пришли в гости! Заполните форму ОС.")
 );
 
+// Специальная стейдж-команда: удалить данные пользователя и остановить бота
+bot.command("death", async (ctx) => {
+  try {
+    resetSession(ctx);
+  } catch {
+    // игнорируем ошибки при очистке сессии
+  }
+
+  await ctx.reply(
+    "Ваши данные в сессии удалены. Бот сейчас будет остановлен.",
+    Markup.removeKeyboard()
+  );
+
+  setTimeout(() => {
+    process.exit(0);
+  }, 500);
+});
+
 // Обработка шагов регистрации студента
 bot.on("text", (ctx, next) => {
   const s = (ctx as any).session as SessionData | undefined;
