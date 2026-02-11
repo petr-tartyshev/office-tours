@@ -390,12 +390,21 @@ bot
   .launch()
   .then(async () => {
     try {
+      // Настраиваем меню команд (как в примере Telegram)
+      await bot.telegram.setMyCommands([
+        { command: "start", description: "Перезапустить бота" },
+        { command: "schedule", description: "Расписание" },
+        { command: "about_tour", description: "Об экскурсиях" },
+        { command: "faq", description: "FAQ" },
+        { command: "question", description: "Задать вопрос" },
+      ]);
+
       const me = await bot.telegram.getMe();
       console.log(
         `Excursion bot started as @${me.username} (id=${me.id.toString()})`
       );
     } catch (e) {
-      console.log("Excursion bot started, но не удалось получить getMe:", e);
+      console.log("Excursion bot started, но не удалось получить getMe или настроить меню:", e);
     }
   })
   .catch((e) => {
