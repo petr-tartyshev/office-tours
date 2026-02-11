@@ -386,7 +386,10 @@ bot.on("message", (ctx) => {
 
   const nick = formatUserNick(ctx);
 
-  return ctx.reply(`Текущая дата и время: ${formatted}\nТвой ник: ${nick}`);
+  return ctx.reply(
+    `Текущая дата и время: ${formatted}\nТвой ник: ${nick}`,
+    Markup.removeKeyboard()
+  );
 });
 
 bot
