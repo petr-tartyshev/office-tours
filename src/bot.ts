@@ -124,7 +124,7 @@ bot.command("menu", (ctx) => {
 });
 
 bot.command("about_tour", (ctx) => {
-  return ctx.reply("об экскурсиях");
+  return ctx.reply("об экскурсиях", Markup.removeKeyboard());
 });
 
 bot.command("info_egistration", (ctx) => {
@@ -213,16 +213,20 @@ bot.action(/slot_student_.+/, (ctx) => {
 // Остальные команды-информационные
 bot.command("schedule", (ctx) => {
   return ctx.reply(
-    "Выберите, для кого расписание:\n- /schedule_group_leader\n- /schedule_student"
+    "Выберите, для кого расписание:\n- /schedule_group_leader\n- /schedule_student",
+    Markup.removeKeyboard()
   );
 });
 
 bot.command("faq", (ctx) =>
-  ctx.reply("FAQ (здесь позже появятся вопросы и ответы)")
+  ctx.reply("FAQ (здесь позже появятся вопросы и ответы)", Markup.removeKeyboard())
 );
 
 bot.command("question", (ctx) =>
-  ctx.reply("Напишите ваш вопрос текстом, мы обязательно ответим позже.")
+  ctx.reply(
+    "Напишите ваш вопрос текстом, мы обязательно ответим позже.",
+    Markup.removeKeyboard()
+  )
 );
 
 bot.command("reminder_3day", (ctx) => {
