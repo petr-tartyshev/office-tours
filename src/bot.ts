@@ -95,7 +95,7 @@ const formatRegistrationSummary = (data: RegistrationData): string => {
 };
 
 // Команды
-bot.start((ctx) => ctx.reply("привет!"));
+bot.start((ctx) => ctx.reply("привет!", Markup.removeKeyboard()));
 
 bot.command("approval", (ctx) => {
   return ctx.reply(
@@ -118,7 +118,8 @@ bot.command("menu", (ctx) => {
       "/about_tour — Об экскурсиях",
       "/faq — FAQ",
       "/question — Задать вопрос",
-    ].join("\n")
+    ].join("\n"),
+    Markup.removeKeyboard()
   );
 });
 
