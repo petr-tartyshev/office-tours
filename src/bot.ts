@@ -191,8 +191,8 @@ const studentSlots = [
   "28 февраля, 14:00",
 ];
 
-bot.command("schedule_group_leader", (ctx) => {
-  return ctx.reply(
+const showScheduleGroupLeader = (ctx: any) =>
+  ctx.reply(
     "Доступные слоты: 20 февраля, 15:00 (создано несколько слотов):",
     Markup.inlineKeyboard(
       groupLeaderSlots.map((slot) => [
@@ -200,10 +200,9 @@ bot.command("schedule_group_leader", (ctx) => {
       ])
     )
   );
-});
 
-bot.command("schedule_student", (ctx) => {
-  return ctx.reply(
+const showScheduleStudent = (ctx: any) =>
+  ctx.reply(
     "Доступные слоты: 25 февраля, 15:00 (создано несколько слотов):",
     Markup.inlineKeyboard(
       studentSlots.map((slot) => [
@@ -211,6 +210,48 @@ bot.command("schedule_student", (ctx) => {
       ])
     )
   );
+
+bot.command("schedule_group_leader", (ctx) => showScheduleGroupLeader(ctx));
+
+bot.command("schedule_student", (ctx) => showScheduleStudent(ctx));
+
+// Выбор роли для расписания
+const scheduleInfoText =
+  "Для выбора свободных слотов, пожалуйста укажите, вы:";
+
+const scheduleInfoKeyboard = Markup.inlineKeyboard([
+  [
+    Markup.button.callback(
+      "Руководитель группы /schedule_group_leader",
+      "schedule_info_group"
+    ),
+  ],
+  [
+    Markup.button.callback(
+      "Студент вуза /schedule_student",
+      "schedule_info_student"
+    ),
+  ],
+]);
+
+bot.command("schedule_info", (ctx) =>
+  ctx.reply(scheduleInfoText, scheduleInfoKeyboard)
+);
+
+bot.action("schedule_info_group", (ctx) => {
+  ctx.answerCbQuery();
+  return showScheduleGroupLeader(ctx);
+});
+
+bot.action("schedule_info_student", (ctx) => {
+  ctx.answerCbQuery();
+  return showScheduleStudent(ctx);
+});
+
+// Кнопка «Расписание» в /main ведёт к /schedule_info
+bot.action("main_schedule_info", (ctx) => {
+  ctx.answerCbQuery();
+  return ctx.editMessageText(scheduleInfoText, scheduleInfoKeyboard);
 });
 
 // Обработка выбора слота студентом
