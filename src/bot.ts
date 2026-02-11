@@ -342,8 +342,16 @@ bot.action("confirm_registration", (ctx) => {
   );
 });
 
-// Фолбэк: если нет активного сценария, просто отвечаем датой/временем и ником
+// Фолбэк: если нет активного сценария и это не команда, отвечаем датой/временем и ником
 bot.on("message", (ctx) => {
+  const msg: any = ctx.message;
+
+  // Если это текстовая команда (/start, /approval и т.п.) — ничего не делаем,
+  // чтобы не перебивать ответы команд.
+  if (msg && typeof msg.text === "string" && msg.text.startsWith("/")) {
+    return;
+  }
+
   const now = new Date();
   const formatted = now.toLocaleString("ru-RU", {
     year: "numeric",
