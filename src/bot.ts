@@ -220,18 +220,8 @@ const scheduleInfoText =
   "Для выбора свободных слотов, пожалуйста укажите, вы:";
 
 const scheduleInfoKeyboard = Markup.inlineKeyboard([
-  [
-    Markup.button.callback(
-      "Руководитель группы /schedule_group_leader",
-      "schedule_info_group"
-    ),
-  ],
-  [
-    Markup.button.callback(
-      "Студент вуза /schedule_student",
-      "schedule_info_student"
-    ),
-  ],
+  [Markup.button.callback("Руководитель группы", "schedule_info_group")],
+  [Markup.button.callback("Студент вуза", "schedule_info_student")],
 ]);
 
 bot.command("schedule_info", (ctx) =>
