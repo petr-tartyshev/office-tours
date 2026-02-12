@@ -9,6 +9,8 @@ if (!token) {
   throw new Error("TELEGRAM_BOT_TOKEN is not set in environment variables");
 }
 
+type RegistrationFlow = "student" | "group_leader";
+
 type RegistrationStep =
   | "surname"
   | "name"
@@ -18,9 +20,14 @@ type RegistrationStep =
   | "phone"
   | "university"
   | "faculty"
-  | "confirm";
-
-type RegistrationFlow = "student";
+  | "confirm"
+  // Дополнительные шаги для анкеты руководителя группы
+  | "institutionType"
+  | "schoolName"
+  | "spoName"
+  | "participantsFio"
+  | "participantsBirthDate"
+  | "groupLeaderConfirm";
 
 interface RegistrationData {
   slot?: string;
@@ -32,6 +39,11 @@ interface RegistrationData {
   phone?: string;
   university?: string;
   faculty?: string;
+  // Данные для руководителя группы
+  institutionType?: "university" | "school" | "spo";
+  institutionName?: string;
+  tempParticipantName?: string;
+  participants?: { fullName: string; birthDate: string }[];
 }
 
 interface SessionData {
@@ -81,7 +93,7 @@ const setStudentFlowStep = (ctx: any, step: RegistrationStep) => {
 };
 
 const formatRegistrationSummary = (data: RegistrationData): string => {
-  return [
+  const lines: string[] = [
     `Слот: ${data.slot ?? "-"}`,
     `Фамилия: ${data.surname ?? "-"}`,
     `Имя: ${data.name ?? "-"}`,
@@ -91,7 +103,80 @@ const formatRegistrationSummary = (data: RegistrationData): string => {
     `Телефон: ${data.phone ?? "-"}`,
     `Университет: ${data.university ?? "-"}`,
     `Факультет: ${data.faculty ?? "-"}`,
-  ].join("\n");
+  ];
+
+  if (data.institutionType) {
+    const typeLabel =
+      data.institutionType === "university"
+        ? "ВУЗ"
+        : data.institutionType === "school"
+        ? "Школа"
+        : "СПО";
+    lines.push(
+      `Учреждение (${typeLabel}): ${data.institutionName ?? "-"}`
+    );
+  }
+
+  if (data.participants && data.participants.length > 0) {
+    lines.push("", "Участники:");
+    data.participants.forEach((p, index) => {
+      lines.push(`${index + 1}. ${p.fullName ?? "-"} — ${p.birthDate ?? "-"}`);
+    });
+  }
+
+  return lines.join("\n");
+};
+
+const isAgeAtLeast14 = (birthDateText: string): boolean => {
+  const parts = birthDateText.split(".");
+  if (parts.length !== 3) {
+    // Если формат странный, не блокируем пользователя
+    return true;
+  }
+
+  const [dayStr, monthStr, yearStr] = parts;
+  const day = Number(dayStr);
+  const month = Number(monthStr);
+  const year = Number(yearStr);
+
+  if (!day || !month || !year) {
+    return true;
+  }
+
+  const birth = new Date(year, month - 1, day);
+  if (Number.isNaN(birth.getTime())) {
+    return true;
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+
+  return age >= 14;
+};
+
+const sendParticipantsIntro = (ctx: any, s: SessionData) => {
+  s.step = "participantsFio";
+  (ctx as any).session = s;
+
+  return ctx.reply(
+    [
+      "Далее отправьте данные участников экскурсии в Офис.",
+      "Максимальное количество участников - 15 человек.",
+      "Возраст - от 14 лет.",
+    ].join("\n"),
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          "Добавить первого участника",
+          "participants_add"
+        ),
+      ],
+    ])
+  );
 };
 
 // Текст и клавиатура согласия (для /start и /approval)
@@ -238,6 +323,28 @@ bot.action("main_schedule_info", (ctx) => {
   return ctx.editMessageText(scheduleInfoText, scheduleInfoKeyboard);
 });
 
+// Обработка выбора слота руководителем группы
+bot.action(/slot_group_.+/, (ctx) => {
+  const raw =
+    ctx.callbackQuery && "data" in ctx.callbackQuery
+      ? (ctx.callbackQuery.data as string)
+      : "";
+  const slot = raw.replace("slot_group_", "");
+
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.flow = "group_leader";
+  s.step = "surname";
+  s.data = s.data || {};
+  s.data.slot = slot;
+  s.data.participants = [];
+  s.data.tempParticipantName = undefined;
+  (ctx as any).session = s;
+
+  return ctx.reply(`Вы выбрали слот: ${slot}\n\nВаша фамилия`);
+});
+
 // Обработка выбора слота студентом
 bot.action(/slot_student_.+/, (ctx) => {
   const raw =
@@ -358,70 +465,212 @@ bot.command("death", async (ctx) => {
   }, 500);
 });
 
-// Обработка шагов регистрации студента
+// Обработка шагов регистрации (студент и руководитель группы)
 bot.on("text", (ctx, next) => {
   const s = (ctx as any).session as SessionData | undefined;
 
-  if (!s || s.flow !== "student" || !s.step) {
+  if (!s || !s.flow || !s.step) {
     return next();
   }
 
   const text = ctx.message.text.trim();
   s.data = s.data || {};
 
-  switch (s.step) {
-    case "surname":
-      s.data.surname = text;
-      setStudentFlowStep(ctx, "name");
-      return ctx.reply("Ваше имя");
+  if (s.flow === "student") {
+    switch (s.step) {
+      case "surname":
+        s.data.surname = text;
+        setStudentFlowStep(ctx, "name");
+        return ctx.reply("Ваше имя");
 
-    case "name":
-      s.data.name = text;
-      setStudentFlowStep(ctx, "patronymic");
-      return ctx.reply("Ваше отчество");
+      case "name":
+        s.data.name = text;
+        setStudentFlowStep(ctx, "patronymic");
+        return ctx.reply("Ваше отчество");
 
-    case "patronymic":
-      s.data.patronymic = text;
-      setStudentFlowStep(ctx, "birthDate");
-      return ctx.reply("Дата рождения (формат 00.00.0000)");
+      case "patronymic":
+        s.data.patronymic = text;
+        setStudentFlowStep(ctx, "birthDate");
+        return ctx.reply("Дата рождения (формат 00.00.0000)");
 
-    case "birthDate":
-      s.data.birthDate = text;
-      setStudentFlowStep(ctx, "email");
-      return ctx.reply("Ваша почта");
+      case "birthDate":
+        s.data.birthDate = text;
+        setStudentFlowStep(ctx, "email");
+        return ctx.reply("Ваша почта");
 
-    case "email":
-      s.data.email = text;
-      setStudentFlowStep(ctx, "phone");
-      return ctx.reply("Ваш номер телефона (формат 79*********)");
+      case "email":
+        s.data.email = text;
+        setStudentFlowStep(ctx, "phone");
+        return ctx.reply("Ваш номер телефона (формат 79*********)");
 
-    case "phone":
-      s.data.phone = text;
-      setStudentFlowStep(ctx, "university");
-      return ctx.reply(
-        "Ваш университет",
-        Markup.inlineKeyboard([
-          [
-            Markup.button.callback("МГУ", "university_МГУ"),
-            Markup.button.callback("ФИЗ ТЕХ", "university_ФИЗ ТЕХ"),
-          ],
-          [Markup.button.callback("ВШЭ", "university_ВШЭ")],
-        ])
-      );
+      case "phone":
+        s.data.phone = text;
+        setStudentFlowStep(ctx, "university");
+        return ctx.reply(
+          "Ваш университет",
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback("МГУ", "university_МГУ"),
+              Markup.button.callback("ФИЗ ТЕХ", "university_ФИЗ ТЕХ"),
+            ],
+            [Markup.button.callback("ВШЭ", "university_ВШЭ")],
+          ])
+        );
 
-    case "university":
-    case "faculty":
-      // Для этих шагов данные приходят через нажатие кнопок, а не текстом
-      return ctx.reply(
-        "Пожалуйста, выберите вариант из кнопок ниже, а не вводите текстом."
-      );
+      case "university":
+        // Университет выбирается по кнопкам, текст сюда не ожидается
+        return ctx.reply(
+          "Пожалуйста, выберите вариант из кнопок ниже, а не вводите текстом."
+        );
 
-    default:
-      resetSession(ctx);
-      return ctx.reply(
-        "Что-то пошло не так, давайте начнём сначала. Выберите «Расписание» в меню и снова выберите слот."
-      );
+      case "faculty":
+        // Факультет теперь пользователь вводит текстом
+        s.data.faculty = text;
+        setStudentFlowStep(ctx, "confirm");
+        const summary = formatRegistrationSummary(s.data);
+        return ctx.reply(
+          `Давайте сверим данные:\n\n${summary}\n\nЕсли они верны, нажмите кнопку «Подтвердить».`,
+          Markup.inlineKeyboard([
+            Markup.button.callback(
+              "Подтвердить",
+              "student_data_verification"
+            ),
+          ])
+        );
+
+      default:
+        resetSession(ctx);
+        return ctx.reply(
+          "Что-то пошло не так, давайте начнём сначала. Выберите «Расписание» в меню и снова выберите слот."
+        );
+    }
   }
+
+  if (s.flow === "group_leader") {
+    switch (s.step) {
+      case "surname":
+        s.data.surname = text;
+        s.step = "name";
+        (ctx as any).session = s;
+        return ctx.reply("Ваше имя");
+
+      case "name":
+        s.data.name = text;
+        s.step = "patronymic";
+        (ctx as any).session = s;
+        return ctx.reply("Ваше отчество");
+
+      case "patronymic":
+        s.data.patronymic = text;
+        s.step = "birthDate";
+        (ctx as any).session = s;
+        return ctx.reply("Дата рождения (формат 00.00.0000)");
+
+      case "birthDate":
+        s.data.birthDate = text;
+        s.step = "email";
+        (ctx as any).session = s;
+        return ctx.reply("Ваша почта");
+
+      case "email":
+        s.data.email = text;
+        s.step = "phone";
+        (ctx as any).session = s;
+        return ctx.reply("Ваш номер телефона (формат 79*********)");
+
+      case "phone":
+        s.data.phone = text;
+        s.step = "institutionType";
+        (ctx as any).session = s;
+        return ctx.reply(
+          "Какое учебное заведение представляете",
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback("ВУЗ", "institution_university"),
+              Markup.button.callback("Школа", "institution_school"),
+              Markup.button.callback("СПО", "institution_spo"),
+            ],
+          ])
+        );
+
+      case "institutionType":
+        return ctx.reply(
+          "Пожалуйста, выберите один из вариантов с помощью кнопок ниже."
+        );
+
+      case "schoolName":
+        s.data.institutionType = "school";
+        s.data.institutionName = text;
+        return sendParticipantsIntro(ctx, s);
+
+      case "spoName":
+        s.data.institutionType = "spo";
+        s.data.institutionName = text;
+        return sendParticipantsIntro(ctx, s);
+
+      case "university":
+        return ctx.reply(
+          "Пожалуйста, выберите университет из кнопок ниже, а не вводите текстом."
+        );
+
+      case "faculty":
+        s.data.faculty = text;
+        return sendParticipantsIntro(ctx, s);
+
+      case "participantsFio":
+        s.data.tempParticipantName = text;
+        s.step = "participantsBirthDate";
+        (ctx as any).session = s;
+        return ctx.reply(
+          "Дата рождения участника (формат 00.00.0000)"
+        );
+
+      case "participantsBirthDate": {
+        const ageOk = isAgeAtLeast14(text);
+        if (!ageOk) {
+          return ctx.reply(
+            "Возраст участника должен быть старше 14 лет!"
+          );
+        }
+
+        const name = s.data.tempParticipantName ?? "Без имени";
+        const participants = s.data.participants || [];
+        participants.push({ fullName: name, birthDate: text });
+        s.data.participants = participants;
+        s.data.tempParticipantName = undefined;
+
+        const number = participants.length;
+        const participantInfo = `Номер [${number}]\n/participants_fio: ${name}\n/participants_birth_date: ${text}`;
+
+        const buttons: any[] = [];
+        if (participants.length < 15) {
+          buttons.push([
+            Markup.button.callback(
+              "Добавить участника",
+              "participants_add"
+            ),
+          ]);
+        }
+        buttons.push([
+          Markup.button.callback(
+            "Завершить регистрацию",
+            "group_leader_data_verification"
+          ),
+        ]);
+
+        (ctx as any).session = s;
+        return ctx.reply(participantInfo, Markup.inlineKeyboard(buttons));
+      }
+
+      default:
+        resetSession(ctx);
+        return ctx.reply(
+          "Что-то пошло не так, давайте начнём сначала. Выберите «Расписание» в меню и снова выберите слот."
+        );
+    }
+  }
+
+  return next();
 });
 
 // Обработка выбора университета и факультета через inline-кнопки
@@ -435,58 +684,116 @@ bot.action(/university_.+/, (ctx) => {
   ctx.answerCbQuery();
 
   const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
-  s.flow = "student";
+  // Сохраняем текущий flow (student или group_leader), по умолчанию считаем student
+  s.flow = s.flow || "student";
   s.step = "faculty";
   s.data = s.data || {};
   s.data.university = uni;
   (ctx as any).session = s;
 
+  return ctx.reply("Напишите ваш факультет");
+});
+
+// Выбор типа учреждения и работа с участниками (анкета руководителя группы)
+bot.action("institution_university", (ctx) => {
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.flow = "group_leader";
+  s.step = "university";
+  s.data = s.data || {};
+  s.data.institutionType = "university";
+  (ctx as any).session = s;
+
   return ctx.reply(
-    "Ваш факультет",
+    "Ваш университет",
     Markup.inlineKeyboard([
       [
-        Markup.button.callback(
-          "Прикладная математика",
-          "faculty_Прикладная математика"
-        ),
+        Markup.button.callback("МГУ", "university_МГУ"),
+        Markup.button.callback("ФИЗ ТЕХ", "university_ФИЗ ТЕХ"),
       ],
-      [Markup.button.callback("Маркетинг и PR", "faculty_Маркетинг и PR")],
-      [
-        Markup.button.callback(
-          "Информационная безопасность",
-          "faculty_Информационная безопасность"
-        ),
-      ],
+      [Markup.button.callback("ВШЭ", "university_ВШЭ")],
     ])
   );
 });
 
-bot.action(/faculty_.+/, (ctx) => {
-  const raw =
-    ctx.callbackQuery && "data" in ctx.callbackQuery
-      ? (ctx.callbackQuery.data as string)
-      : "";
-  const faculty = raw.replace("faculty_", "");
-
+bot.action("institution_school", (ctx) => {
   ctx.answerCbQuery();
 
   const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
-  s.flow = "student";
-  s.step = "confirm";
+  s.flow = "group_leader";
+  s.step = "schoolName";
   s.data = s.data || {};
-  s.data.faculty = faculty;
+  s.data.institutionType = "school";
+  (ctx as any).session = s;
+
+  return ctx.reply("Впишите полное наименование школы");
+});
+
+bot.action("institution_spo", (ctx) => {
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.flow = "group_leader";
+  s.step = "spoName";
+  s.data = s.data || {};
+  s.data.institutionType = "spo";
+  (ctx as any).session = s;
+
+  return ctx.reply("Впишите полное наименование СПО");
+});
+
+bot.action("participants_add", (ctx) => {
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.flow = "group_leader";
+  s.step = "participantsFio";
+  s.data = s.data || {};
+  (ctx as any).session = s;
+
+  return ctx.reply("Укажите ФИО участника");
+});
+
+bot.action("group_leader_data_verification", (ctx) => {
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.flow = "group_leader";
+  s.step = "groupLeaderConfirm";
+  s.data = s.data || {};
   (ctx as any).session = s;
 
   const summary = formatRegistrationSummary(s.data);
   return ctx.reply(
     `Давайте сверим данные:\n\n${summary}\n\nЕсли они верны, нажмите кнопку «Подтвердить».`,
     Markup.inlineKeyboard([
-      Markup.button.callback("Подтвердить", "confirm_registration"),
+      Markup.button.callback("Подтвердить", "group_leader_confirm"),
     ])
   );
 });
 
-bot.action("confirm_registration", (ctx) => {
+bot.action("group_leader_confirm", (ctx) => {
+  const s = (ctx as any).session as SessionData | undefined;
+  const data = s?.data;
+
+  ctx.answerCbQuery();
+
+  if (!data) {
+    return ctx.editMessageText(
+      "Не удалось найти данные регистрации. Пожалуйста, начните заново: меню → Расписание → Руководитель группы."
+    );
+  }
+
+  const summary = formatRegistrationSummary(data);
+  resetSession(ctx);
+
+  return ctx.editMessageText(
+    `Заявка руководителя группы подтверждена!\n\n${summary}\n\nСпасибо, что записались на экскурсию.`
+  );
+});
+
+bot.action("student_data_verification", (ctx) => {
   const s = (ctx as any).session as SessionData | undefined;
   const data = s?.data;
 
