@@ -27,6 +27,8 @@ type RegistrationStep =
   | "spoName"
   | "participantsFio"
   | "participantsBirthDate"
+  | "editParticipantFio"
+  | "editParticipantBirthDate"
   | "groupLeaderConfirm";
 
 interface RegistrationData {
@@ -44,6 +46,7 @@ interface RegistrationData {
   institutionName?: string;
   tempParticipantName?: string;
   participants?: { fullName: string; birthDate: string }[];
+  editingParticipantIndex?: number;
 }
 
 interface SessionData {
@@ -167,6 +170,27 @@ const formatParticipantsList = (
         `Участник ${i + 1}\nФИО: ${p.fullName}\nДата рождения: ${p.birthDate}`
     )
     .join("\n\n");
+};
+
+const buildParticipantsListKeyboard = (
+  participants: { fullName: string; birthDate: string }[]
+) => {
+  const rows: any[] = [];
+  if (participants.length < 15) {
+    rows.push([
+      Markup.button.callback("Добавить участника", "participants_add"),
+    ]);
+  }
+  rows.push([
+    Markup.button.callback("Изменить участника", "participants_edit"),
+  ]);
+  rows.push([
+    Markup.button.callback(
+      "Завершить регистрацию",
+      "group_leader_data_verification"
+    ),
+  ]);
+  return Markup.inlineKeyboard(rows);
 };
 
 const sendParticipantsIntro = (ctx: any, s: SessionData) => {
@@ -651,24 +675,46 @@ bot.on("text", async (ctx, next) => {
         s.data.tempParticipantName = undefined;
 
         const listText = formatParticipantsList(participants);
-        const buttons: any[] = [];
-        if (participants.length < 15) {
-          buttons.push([
-            Markup.button.callback(
-              "Добавить участника",
-              "participants_add"
-            ),
-          ]);
-        }
-        buttons.push([
-          Markup.button.callback(
-            "Завершить регистрацию",
-            "group_leader_data_verification"
-          ),
-        ]);
-
         (ctx as any).session = s;
-        return ctx.reply(listText, Markup.inlineKeyboard(buttons));
+        return ctx.reply(listText, buildParticipantsListKeyboard(participants));
+      }
+
+      case "editParticipantFio": {
+        const idx = s.data.editingParticipantIndex ?? 0;
+        const participants = s.data.participants ?? [];
+        if (idx < 0 || idx >= participants.length) {
+          s.step = "participantsFio";
+          s.data.editingParticipantIndex = undefined;
+          (ctx as any).session = s;
+          return ctx.reply("Ошибка. Укажите ФИО участника.");
+        }
+        participants[idx].fullName = text;
+        s.step = "editParticipantBirthDate";
+        (ctx as any).session = s;
+        return ctx.reply("Введите новую дату рождения /participants_birth_date");
+      }
+
+      case "editParticipantBirthDate": {
+        const ageOk = isAgeAtLeast14(text);
+        if (!ageOk) {
+          return ctx.reply(
+            "Возраст участника должен быть старше 14 лет!"
+          );
+        }
+        const idx = s.data.editingParticipantIndex ?? 0;
+        const participants = s.data.participants ?? [];
+        if (idx < 0 || idx >= participants.length) {
+          s.step = "participantsFio";
+          s.data.editingParticipantIndex = undefined;
+          (ctx as any).session = s;
+          return ctx.reply("Ошибка. Укажите ФИО участника.");
+        }
+        participants[idx].birthDate = text;
+        s.data.editingParticipantIndex = undefined;
+        s.step = "participantsFio";
+        (ctx as any).session = s;
+        const listText = formatParticipantsList(participants);
+        return ctx.reply(listText, buildParticipantsListKeyboard(participants));
       }
 
       default:
@@ -762,6 +808,44 @@ bot.action("participants_add", (ctx) => {
   (ctx as any).session = s;
 
   return ctx.reply("Укажите ФИО участника");
+});
+
+bot.action("participants_edit", (ctx) => {
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  const participants = s.data?.participants ?? [];
+  if (participants.length === 0) {
+    return ctx.reply("Нет участников для изменения.");
+  }
+
+  const buttons = participants.map((_, i) => [
+    Markup.button.callback(`Участник ${i + 1}`, `participants_edit_${i}`),
+  ]);
+  return ctx.reply(
+    "Какого участника вы хотите изменить?",
+    Markup.inlineKeyboard(buttons)
+  );
+});
+
+bot.action(/participants_edit_\d+/, (ctx) => {
+  const raw =
+    ctx.callbackQuery && "data" in ctx.callbackQuery
+      ? (ctx.callbackQuery.data as string)
+      : "";
+  const match = raw.match(/participants_edit_(\d+)/);
+  const index = match ? parseInt(match[1], 10) : 0;
+
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.flow = "group_leader";
+  s.step = "editParticipantFio";
+  s.data = s.data || {};
+  s.data.editingParticipantIndex = index;
+  (ctx as any).session = s;
+
+  return ctx.reply("Введите новое ФИО /participants_fio");
 });
 
 bot.action("group_leader_data_verification", (ctx) => {
