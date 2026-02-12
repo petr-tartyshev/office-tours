@@ -44,7 +44,6 @@ interface RegistrationData {
   institutionName?: string;
   tempParticipantName?: string;
   participants?: { fullName: string; birthDate: string }[];
-  participantsListMessageId?: number;
 }
 
 interface SessionData {
@@ -667,27 +666,9 @@ bot.on("text", async (ctx, next) => {
             "group_leader_data_verification"
           ),
         ]);
-        const keyboard = Markup.inlineKeyboard(buttons);
 
         (ctx as any).session = s;
-
-        const chatId = ctx.chat?.id;
-        const existingMsgId = s.data.participantsListMessageId;
-
-        if (participants.length === 1 || !existingMsgId || chatId === undefined) {
-          const sent = await ctx.reply(listText, keyboard);
-          s.data.participantsListMessageId = sent.message_id;
-          (ctx as any).session = s;
-          return;
-        }
-
-        return ctx.telegram.editMessageText(
-          chatId,
-          existingMsgId,
-          undefined,
-          listText,
-          keyboard
-        );
+        return ctx.reply(listText, Markup.inlineKeyboard(buttons));
       }
 
       default:
