@@ -44,6 +44,7 @@ interface RegistrationData {
   institutionName?: string;
   tempParticipantName?: string;
   participants?: { fullName: string; birthDate: string }[];
+  participantsListMessageId?: number;
 }
 
 interface SessionData {
@@ -156,6 +157,17 @@ const isAgeAtLeast14 = (birthDateText: string): boolean => {
   }
 
   return age >= 14;
+};
+
+const formatParticipantsList = (
+  participants: { fullName: string; birthDate: string }[]
+): string => {
+  return participants
+    .map(
+      (p, i) =>
+        `Участник ${i + 1}\nФИО: ${p.fullName}\nДата рождения: ${p.birthDate}`
+    )
+    .join("\n\n");
 };
 
 const sendParticipantsIntro = (ctx: any, s: SessionData) => {
@@ -466,7 +478,7 @@ bot.command("death", async (ctx) => {
 });
 
 // Обработка шагов регистрации (студент и руководитель группы)
-bot.on("text", (ctx, next) => {
+bot.on("text", async (ctx, next) => {
   const s = (ctx as any).session as SessionData | undefined;
 
   if (!s || !s.flow || !s.step) {
@@ -639,9 +651,7 @@ bot.on("text", (ctx, next) => {
         s.data.participants = participants;
         s.data.tempParticipantName = undefined;
 
-        const number = participants.length;
-        const participantInfo = `Номер [${number}]\n/participants_fio: ${name}\n/participants_birth_date: ${text}`;
-
+        const listText = formatParticipantsList(participants);
         const buttons: any[] = [];
         if (participants.length < 15) {
           buttons.push([
@@ -657,9 +667,27 @@ bot.on("text", (ctx, next) => {
             "group_leader_data_verification"
           ),
         ]);
+        const keyboard = Markup.inlineKeyboard(buttons);
 
         (ctx as any).session = s;
-        return ctx.reply(participantInfo, Markup.inlineKeyboard(buttons));
+
+        const chatId = ctx.chat?.id;
+        const existingMsgId = s.data.participantsListMessageId;
+
+        if (participants.length === 1 || !existingMsgId || chatId === undefined) {
+          const sent = await ctx.reply(listText, keyboard);
+          s.data.participantsListMessageId = sent.message_id;
+          (ctx as any).session = s;
+          return;
+        }
+
+        return ctx.telegram.editMessageText(
+          chatId,
+          existingMsgId,
+          undefined,
+          listText,
+          keyboard
+        );
       }
 
       default:
