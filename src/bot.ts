@@ -94,53 +94,46 @@ const formatRegistrationSummary = (data: RegistrationData): string => {
   ].join("\n");
 };
 
+// Текст и клавиатура согласия (для /start и /approval)
+const approvalText =
+  "Чтобы продолжить, нужно согласиться с правилом 1 и условиями 1.";
+const approvalKeyboard = Markup.inlineKeyboard([
+  Markup.button.callback("Согласен", "approval_accept"),
+]);
+
+// Главное меню — текст и клавиатура (для approval_accept и /main)
+const mainMenuText = "Об экскурсиях в офис.";
+const mainMenuKeyboard = Markup.inlineKeyboard([
+  [Markup.button.callback("Расписание", "main_schedule_info")],
+  [
+    Markup.button.callback("Подробнее об экскурсиях", "main_about_tour"),
+    Markup.button.callback("FAQ", "main_faq"),
+  ],
+  [Markup.button.callback("Задать вопрос", "main_question")],
+]);
+
 // Команды
-bot.start((ctx) =>
-  ctx.reply("Привет! Это экскурсии в офис.", Markup.removeKeyboard())
-);
-
-bot.command("approval", (ctx) => {
-  return ctx.reply(
-    "Чтобы продолжить, нужно согласиться с правилом 1 и условиями 1.",
-    Markup.inlineKeyboard([
-      Markup.button.callback("Согласен", "approval_accept"),
-    ])
-  );
+// 1. /start: приветствие + сразу сообщение с согласием и кнопкой «Согласен»
+bot.start(async (ctx) => {
+  await ctx.reply("Привет! Это экскурсии в офис.", Markup.removeKeyboard());
+  return ctx.reply(approvalText, approvalKeyboard);
 });
 
-bot.action("approval_accept", (ctx) =>
-  ctx.editMessageText("Спасибо! Можно продолжать 🚀")
-);
+bot.command("approval", (ctx) => ctx.reply(approvalText, approvalKeyboard));
 
-// Главное меню
-bot.command("main", (ctx) => {
-  return ctx.reply(
-    "Об экскурсиях в офис.",
-    Markup.inlineKeyboard([
-      [Markup.button.callback("Расписание", "main_schedule_info")],
-      [
-        Markup.button.callback("Подробнее об экскурсиях", "main_about_tour"),
-        Markup.button.callback("FAQ", "main_faq"),
-      ],
-      [Markup.button.callback("Задать вопрос", "main_question")],
-    ])
-  );
+// 2. После «Согласен» — одновременно текст «Спасибо!» и главное меню
+bot.action("approval_accept", async (ctx) => {
+  ctx.answerCbQuery();
+  await Promise.all([
+    ctx.editMessageText("Спасибо! Можно продолжать 🚀"),
+    ctx.reply(mainMenuText, mainMenuKeyboard),
+  ]);
 });
 
-// Оставим /menu как синоним /main
-bot.command("menu", (ctx) => {
-  return ctx.reply(
-    "Об экскурсиях в офис.",
-    Markup.inlineKeyboard([
-      [Markup.button.callback("Расписание", "main_schedule_info")],
-      [
-        Markup.button.callback("Подробнее об экскурсиях", "main_about_tour"),
-        Markup.button.callback("FAQ", "main_faq"),
-      ],
-      [Markup.button.callback("Задать вопрос", "main_question")],
-    ])
-  );
-});
+// Главное меню (команды для тестирования)
+bot.command("main", (ctx) => ctx.reply(mainMenuText, mainMenuKeyboard));
+
+bot.command("menu", (ctx) => ctx.reply(mainMenuText, mainMenuKeyboard));
 
 bot.command("about_tour", (ctx) => {
   return ctx.reply("Подробная информация об экскурсиях", Markup.removeKeyboard());
@@ -162,20 +155,21 @@ const sendRoleChoice = (ctx: any) => {
 
 bot.command("user_info", (ctx) => sendRoleChoice(ctx));
 
+// 3. После выбора роли сразу показываем слоты (без упоминания команд)
 bot.action("role_group_leader", (ctx) => {
   ctx.answerCbQuery();
   resetSession(ctx);
-  return ctx.editMessageText(
-    "Вы выбрали: Руководитель группы.\nИспользуйте команду /schedule_group_leader, чтобы посмотреть расписание."
-  );
+  return ctx
+    .editMessageText("Вы выбрали: Руководитель группы.")
+    .then(() => showScheduleGroupLeader(ctx));
 });
 
 bot.action("role_student", (ctx) => {
   ctx.answerCbQuery();
   resetSession(ctx);
-  return ctx.editMessageText(
-    "Вы выбрали: Студент.\nИспользуйте команду /schedule_student, чтобы посмотреть расписание."
-  );
+  return ctx
+    .editMessageText("Вы выбрали: Студент.")
+    .then(() => showScheduleStudent(ctx));
 });
 
 // Расписание
@@ -268,12 +262,9 @@ bot.action(/slot_student_.+/, (ctx) => {
 });
 
 // Остальные команды-информационные
-bot.command("schedule", (ctx) => {
-  return ctx.reply(
-    "Выберите, для кого расписание:\n- /schedule_group_leader\n- /schedule_student",
-    Markup.removeKeyboard()
-  );
-});
+bot.command("schedule", (ctx) =>
+  ctx.reply(scheduleInfoText, scheduleInfoKeyboard)
+);
 
 bot.command("faq", (ctx) =>
   ctx.reply("Ответы на самые частые вопросы", Markup.removeKeyboard())
@@ -428,7 +419,7 @@ bot.on("text", (ctx, next) => {
     default:
       resetSession(ctx);
       return ctx.reply(
-        "Что-то пошло не так, давайте начнём сначала. Используйте /schedule_student, чтобы выбрать слот."
+        "Что-то пошло не так, давайте начнём сначала. Выберите «Расписание» в меню и снова выберите слот."
       );
   }
 });
@@ -503,7 +494,7 @@ bot.action("confirm_registration", (ctx) => {
 
   if (!data) {
     return ctx.editMessageText(
-      "Не удалось найти данные регистрации. Пожалуйста, начните заново через /schedule_student."
+      "Не удалось найти данные регистрации. Пожалуйста, начните заново: меню → Расписание → Студент вуза."
     );
   }
 
