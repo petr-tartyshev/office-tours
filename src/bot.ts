@@ -8,6 +8,13 @@ import {
   exportStudentsSlot,
   exportGroupLeadersSlot,
 } from "./excel-registrations";
+import {
+  getLastRegistration,
+  setLastRegistration,
+  isSlotConfirmed,
+  setSlotConfirmed,
+  setSlotAvailable,
+} from "./registrations-store";
 
 dotenv.config();
 
@@ -338,9 +345,12 @@ const getCityFromSession = (ctx: any): "MSK" | "SPB" => {
 
 const showScheduleGroupLeader = (ctx: any) => {
   const city = getCityFromSession(ctx);
-  const slots =
+  const allSlots =
     city === "SPB" ? groupLeaderSlotsSPB : groupLeaderSlotsMSK;
-  if (!slots.length) {
+  const available = allSlots
+    .map((slot, index) => ({ slot, index }))
+    .filter(({ slot }) => !isSlotConfirmed(`${slot}_${city}`));
+  if (!available.length) {
     return ctx.reply(
       city === "SPB"
         ? "Для Санкт-Петербурга пока нет доступных слотов для руководителей групп."
@@ -352,11 +362,8 @@ const showScheduleGroupLeader = (ctx: any) => {
   return ctx.reply(
     `Доступные слоты (${cityLabel}):`,
     Markup.inlineKeyboard(
-      slots.map((slot, index) => [
-        Markup.button.callback(
-          slot,
-          `slot_group_${city}_${index}`
-        ),
+      available.map(({ slot, index }) => [
+        Markup.button.callback(slot, `slot_group_${city}_${index}`),
       ])
     )
   );
@@ -364,8 +371,11 @@ const showScheduleGroupLeader = (ctx: any) => {
 
 const showScheduleStudent = (ctx: any) => {
   const city = getCityFromSession(ctx);
-  const slots = city === "SPB" ? studentSlotsSPB : studentSlotsMSK;
-  if (!slots.length) {
+  const allSlots = city === "SPB" ? studentSlotsSPB : studentSlotsMSK;
+  const available = allSlots
+    .map((slot, index) => ({ slot, index }))
+    .filter(({ slot }) => !isSlotConfirmed(`${slot}_${city}`));
+  if (!available.length) {
     return ctx.reply(
       city === "SPB"
         ? "Для Санкт-Петербурга пока нет доступных слотов для студентов."
@@ -377,11 +387,8 @@ const showScheduleStudent = (ctx: any) => {
   return ctx.reply(
     `Доступные слоты (${cityLabel}):`,
     Markup.inlineKeyboard(
-      slots.map((slot, index) => [
-        Markup.button.callback(
-          slot,
-          `slot_student_${city}_${index}`
-        ),
+      available.map(({ slot, index }) => [
+        Markup.button.callback(slot, `slot_student_${city}_${index}`),
       ])
     )
   );
@@ -544,32 +551,73 @@ bot.command("question", (ctx) =>
   )
 );
 
+const reminderKeyboard = Markup.inlineKeyboard([
+  [Markup.button.callback("Подтвердить", "reminder_confirm")],
+  [
+    Markup.button.callback("Изменить", "reminder_change"),
+    Markup.button.callback("Отменить", "reminder_cancel"),
+  ],
+  [Markup.button.callback("Задать вопрос", "reminder_question")],
+]);
+
 bot.command("reminder_3day", (ctx) => {
-  const data = (ctx as any).session?.data as RegistrationData | undefined;
-  const slot = data?.slot ?? "[дата и время не выбраны]";
+  const userId = ctx.from?.id;
+  if (!userId) return ctx.reply("Не удалось определить пользователя.");
+  const reg = getLastRegistration(userId);
+  if (!reg) {
+    return ctx.reply("Нет данных о вашей регистрации на экскурсию.");
+  }
+  const summary = formatRegistrationSummary(reg.data as RegistrationData);
   return ctx.reply(
-    `Напоминаем про экскурсию в Офис: ${slot}`,
-    Markup.inlineKeyboard([
-      [Markup.button.callback("Подтвердить", "reminder3_confirm")],
-      [Markup.button.callback("Изменить", "reminder3_change")],
-      [Markup.button.callback("Задать вопрос", "reminder3_question")],
-    ])
+    `Вы зарегистрировались на экскурсию в Офис. Данные вашей заявки:\n\n${summary}`,
+    reminderKeyboard
   );
 });
 
-bot.action("reminder3_confirm", (ctx) => {
+bot.command("reminder_9am", (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return ctx.reply("Не удалось определить пользователя.");
+  const reg = getLastRegistration(userId);
+  if (!reg) {
+    return ctx.reply("Нет данных о вашей регистрации на экскурсию.");
+  }
+  const summary = formatRegistrationSummary(reg.data as RegistrationData);
+  return ctx.reply(
+    `Вы зарегистрировались на экскурсию в Офис. Данные вашей заявки:\n\n${summary}`,
+    reminderKeyboard
+  );
+});
+
+bot.action("reminder_confirm", (ctx) => {
   ctx.answerCbQuery();
+  const userId = ctx.from?.id;
+  if (!userId) return ctx.editMessageText("Ошибка.");
+  const reg = getLastRegistration(userId);
+  if (!reg?.slot) return ctx.editMessageText("Нет данных о регистрации.");
+  setSlotConfirmed(reg.slot);
   return ctx.editMessageText("Спасибо, что подтвердили участие в экскурсии!");
 });
 
-bot.action("reminder3_change", (ctx) => {
+bot.action("reminder_cancel", (ctx) => {
   ctx.answerCbQuery();
+  const userId = ctx.from?.id;
+  if (!userId) return ctx.editMessageText("Ошибка.");
+  const reg = getLastRegistration(userId);
+  if (!reg?.slot) return ctx.editMessageText("Нет данных о регистрации.");
+  setSlotAvailable(reg.slot);
   return ctx.editMessageText(
-    "Если вы хотите изменить дату или время экскурсии, напишите, пожалуйста, менеджеру или пройдите запись заново."
+    "Вы отменили участие. Слот снова доступен для записи."
   );
 });
 
-bot.action("reminder3_question", (ctx) => {
+bot.action("reminder_change", (ctx) => {
+  ctx.answerCbQuery();
+  return ctx.editMessageText(
+    "Если вы хотите изменить дату или время экскурсии, пройдите запись заново: меню → Расписание."
+  );
+});
+
+bot.action("reminder_question", (ctx) => {
   ctx.answerCbQuery();
   return ctx.reply(
     "Напишите свой вопрос в чат, менеджер ответит в ближайшее время"
@@ -590,11 +638,6 @@ bot.action("rules_ack", (ctx) => {
   return ctx.editMessageReplyMarkup(undefined);
 });
 
-bot.command("reminder_9am", (ctx) => {
-  const data = (ctx as any).session?.data as RegistrationData | undefined;
-  const slot = data?.slot ?? "[дата и время не выбраны]";
-  return ctx.reply(`Напоминаем про экскурсию в Офис: ${slot}`);
-});
 
 bot.command("feedback_form", (ctx) =>
   ctx.reply(
@@ -1003,8 +1046,10 @@ bot.action("group_leader_confirm", async (ctx) => {
     );
   }
 
+  const userId = ctx.from?.id;
   try {
     await appendGroupLeader({
+      telegramUserId: userId,
       slot: data.slot ?? "",
       surname: data.surname,
       name: data.name,
@@ -1019,6 +1064,22 @@ bot.action("group_leader_confirm", async (ctx) => {
     });
   } catch (e) {
     console.error("Ошибка записи в Excel (руководитель группы):", e);
+  }
+
+  if (userId && data.slot) {
+    setLastRegistration(userId, "group_leader", data.slot, {
+      slot: data.slot,
+      surname: data.surname,
+      name: data.name,
+      patronymic: data.patronymic,
+      birthDate: data.birthDate,
+      email: data.email,
+      phone: data.phone,
+      institutionType: data.institutionType,
+      institutionName: data.institutionName,
+      faculty: data.faculty,
+      participants: data.participants,
+    });
   }
 
   const summary = formatRegistrationSummary(data);
@@ -1041,8 +1102,10 @@ bot.action("student_data_verification", async (ctx) => {
     );
   }
 
+  const userId = ctx.from?.id;
   try {
     await appendStudent({
+      telegramUserId: userId,
       slot: data.slot ?? "",
       surname: data.surname,
       name: data.name,
@@ -1055,6 +1118,20 @@ bot.action("student_data_verification", async (ctx) => {
     });
   } catch (e) {
     console.error("Ошибка записи в Excel (студент):", e);
+  }
+
+  if (userId && data.slot) {
+    setLastRegistration(userId, "student", data.slot, {
+      slot: data.slot,
+      surname: data.surname,
+      name: data.name,
+      patronymic: data.patronymic,
+      birthDate: data.birthDate,
+      email: data.email,
+      phone: data.phone,
+      university: data.university,
+      faculty: data.faculty,
+    });
   }
 
   const summary = formatRegistrationSummary(data);

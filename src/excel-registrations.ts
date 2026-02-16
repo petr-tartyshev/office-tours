@@ -10,6 +10,7 @@ const MAX_SHEET_NAME_LENGTH = 31;
 const INVALID_SHEET_CHARS = /[\\/*?:\[\]]/g;
 
 export interface StudentRegistrationData {
+  telegramUserId?: number;
   slot: string;
   surname?: string;
   name?: string;
@@ -22,6 +23,7 @@ export interface StudentRegistrationData {
 }
 
 export interface GroupLeaderRegistrationData {
+  telegramUserId?: number;
   slot: string;
   surname?: string;
   name?: string;
@@ -69,6 +71,7 @@ async function getOrCreateSheet(
 }
 
 const STUDENT_HEADERS = [
+  "Telegram user id",
   "Слот",
   "Фамилия",
   "Имя",
@@ -87,6 +90,7 @@ function ensureStudentHeaders(sheet: ExcelJS.Worksheet) {
 }
 
 const GROUP_LEADER_HEADERS = [
+  "Telegram user id",
   "Слот",
   "Фамилия",
   "Имя",
@@ -111,6 +115,7 @@ export async function appendStudent(data: StudentRegistrationData): Promise<void
   const sheet = await getOrCreateSheet(workbook, data.slot);
   ensureStudentHeaders(sheet);
   sheet.addRow([
+    data.telegramUserId ?? "",
     data.slot ?? "",
     data.surname ?? "",
     data.name ?? "",
@@ -143,6 +148,7 @@ export async function appendGroupLeader(data: GroupLeaderRegistrationData): Prom
       ? "СПО"
       : data.institutionType ?? "";
   sheet.addRow([
+    data.telegramUserId ?? "",
     data.slot ?? "",
     data.surname ?? "",
     data.name ?? "",
