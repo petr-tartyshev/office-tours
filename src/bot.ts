@@ -41,6 +41,7 @@ type RegistrationStep =
 
 interface RegistrationData {
   slot?: string;
+  city?: "MSK" | "SPB";
   surname?: string;
   name?: string;
   patronymic?: string;
@@ -283,6 +284,18 @@ const sendRoleChoice = (ctx: any) => {
 
 bot.command("user_info", (ctx) => sendRoleChoice(ctx));
 
+// Выбор города перед расписанием
+const cityKeyboard = Markup.inlineKeyboard([
+  [Markup.button.callback("Москва", "sity_MSK")],
+  [Markup.button.callback("Санкт-Петербург", "sity_SPB")],
+]);
+
+const sendCityChoice = (ctx: any) => {
+  return ctx.reply("Выберите город", cityKeyboard);
+};
+
+bot.command("sity", (ctx) => sendCityChoice(ctx));
+
 // 3. После выбора роли сразу показываем слоты (без упоминания команд)
 bot.action("role_group_leader", (ctx) => {
   ctx.answerCbQuery();
@@ -300,42 +313,112 @@ bot.action("role_student", (ctx) => {
     .then(() => showScheduleStudent(ctx));
 });
 
-// Расписание
-const groupLeaderSlots = [
+// Расписание по городам
+const groupLeaderSlotsMSK = [
   "20 февраля, 15:00",
   "22 февраля, 11:00",
   "27 февраля, 16:00",
 ];
 
-const studentSlots = [
+const groupLeaderSlotsSPB: string[] = [];
+
+const studentSlotsMSK = [
   "25 февраля, 15:00",
   "26 февраля, 10:00",
   "28 февраля, 14:00",
 ];
 
-const showScheduleGroupLeader = (ctx: any) =>
-  ctx.reply(
-    "Доступные слоты: 20 февраля, 15:00 (создано несколько слотов):",
+const studentSlotsSPB: string[] = [];
+
+const getCityFromSession = (ctx: any): "MSK" | "SPB" => {
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  const city = s.data?.city;
+  return city === "SPB" ? "SPB" : "MSK";
+};
+
+const showScheduleGroupLeader = (ctx: any) => {
+  const city = getCityFromSession(ctx);
+  const slots =
+    city === "SPB" ? groupLeaderSlotsSPB : groupLeaderSlotsMSK;
+  if (!slots.length) {
+    return ctx.reply(
+      city === "SPB"
+        ? "Для Санкт-Петербурга пока нет доступных слотов для руководителей групп."
+        : "Для Москвы пока нет доступных слотов для руководителей групп."
+    );
+  }
+
+  const cityLabel = city === "SPB" ? "Санкт-Петербург" : "Москва";
+  return ctx.reply(
+    `Доступные слоты (${cityLabel}):`,
     Markup.inlineKeyboard(
-      groupLeaderSlots.map((slot) => [
-        Markup.button.callback(slot, `slot_group_${slot}`),
+      slots.map((slot, index) => [
+        Markup.button.callback(
+          slot,
+          `slot_group_${city}_${index}`
+        ),
       ])
     )
   );
+};
 
-const showScheduleStudent = (ctx: any) =>
-  ctx.reply(
-    "Доступные слоты: 25 февраля, 15:00 (создано несколько слотов):",
+const showScheduleStudent = (ctx: any) => {
+  const city = getCityFromSession(ctx);
+  const slots = city === "SPB" ? studentSlotsSPB : studentSlotsMSK;
+  if (!slots.length) {
+    return ctx.reply(
+      city === "SPB"
+        ? "Для Санкт-Петербурга пока нет доступных слотов для студентов."
+        : "Для Москвы пока нет доступных слотов для студентов."
+    );
+  }
+
+  const cityLabel = city === "SPB" ? "Санкт-Петербург" : "Москва";
+  return ctx.reply(
+    `Доступные слоты (${cityLabel}):`,
     Markup.inlineKeyboard(
-      studentSlots.map((slot) => [
-        Markup.button.callback(slot, `slot_student_${slot}`),
+      slots.map((slot, index) => [
+        Markup.button.callback(
+          slot,
+          `slot_student_${city}_${index}`
+        ),
       ])
     )
   );
+};
 
-bot.command("schedule_group_leader", (ctx) => showScheduleGroupLeader(ctx));
+// Тестовые команды по городам
+bot.command("schedule_group_leader_MSK", (ctx) => {
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.data = s.data || {};
+  s.data.city = "MSK";
+  (ctx as any).session = s;
+  return showScheduleGroupLeader(ctx);
+});
 
-bot.command("schedule_student", (ctx) => showScheduleStudent(ctx));
+bot.command("schedule_group_leader_SPB", (ctx) => {
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.data = s.data || {};
+  s.data.city = "SPB";
+  (ctx as any).session = s;
+  return showScheduleGroupLeader(ctx);
+});
+
+bot.command("schedule_student_MSK", (ctx) => {
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.data = s.data || {};
+  s.data.city = "MSK";
+  (ctx as any).session = s;
+  return showScheduleStudent(ctx);
+});
+
+bot.command("schedule_student_SPB", (ctx) => {
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.data = s.data || {};
+  s.data.city = "SPB";
+  (ctx as any).session = s;
+  return showScheduleStudent(ctx);
+});
 
 // Выбор роли для расписания
 const scheduleInfoText =
@@ -346,9 +429,30 @@ const scheduleInfoKeyboard = Markup.inlineKeyboard([
   [Markup.button.callback("Студент вуза", "schedule_info_student")],
 ]);
 
-bot.command("schedule_info", (ctx) =>
-  ctx.reply(scheduleInfoText, scheduleInfoKeyboard)
-);
+// Выбор города (inline-кнопки) → выбор роли (scheduleInfoKeyboard)
+bot.action("sity_MSK", (ctx) => {
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.data = s.data || {};
+  s.data.city = "MSK";
+  (ctx as any).session = s;
+
+  return ctx.editMessageText(scheduleInfoText, scheduleInfoKeyboard);
+});
+
+bot.action("sity_SPB", (ctx) => {
+  ctx.answerCbQuery();
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.data = s.data || {};
+  s.data.city = "SPB";
+  (ctx as any).session = s;
+
+  return ctx.editMessageText(scheduleInfoText, scheduleInfoKeyboard);
+});
+
+bot.command("schedule_info", (ctx) => sendCityChoice(ctx));
 
 bot.action("schedule_info_group", (ctx) => {
   ctx.answerCbQuery();
@@ -360,10 +464,10 @@ bot.action("schedule_info_student", (ctx) => {
   return showScheduleStudent(ctx);
 });
 
-// Кнопка «Расписание» в /main ведёт к /schedule_info
+// Кнопка «Расписание» в /main ведёт к выбору города
 bot.action("main_schedule_info", (ctx) => {
   ctx.answerCbQuery();
-  return ctx.editMessageText(scheduleInfoText, scheduleInfoKeyboard);
+  return ctx.editMessageText("Выберите город", cityKeyboard);
 });
 
 // Обработка выбора слота руководителем группы
@@ -372,20 +476,28 @@ bot.action(/slot_group_.+/, (ctx) => {
     ctx.callbackQuery && "data" in ctx.callbackQuery
       ? (ctx.callbackQuery.data as string)
       : "";
-  const slot = raw.replace("slot_group_", "");
 
   ctx.answerCbQuery();
+
+  const match = raw.match(/^slot_group_(MSK|SPB)_(\d+)$/);
+  const cityCode = (match?.[1] as "MSK" | "SPB") || "MSK";
+  const index = match ? parseInt(match[2], 10) : 0;
+  const slots =
+    cityCode === "SPB" ? groupLeaderSlotsSPB : groupLeaderSlotsMSK;
+  const slotLabel = slots[index] ?? "неизвестный слот";
+  const slotId = `${slotLabel}_${cityCode}`;
 
   const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
   s.flow = "group_leader";
   s.step = "surname";
   s.data = s.data || {};
-  s.data.slot = slot;
+  s.data.city = cityCode;
+  s.data.slot = slotId;
   s.data.participants = [];
   s.data.tempParticipantName = undefined;
   (ctx as any).session = s;
 
-  return ctx.reply(`Вы выбрали слот: ${slot}\n\nВаша фамилия`);
+  return ctx.reply(`Вы выбрали слот: ${slotLabel}\n\nВаша фамилия`);
 });
 
 // Обработка выбора слота студентом
@@ -394,27 +506,32 @@ bot.action(/slot_student_.+/, (ctx) => {
     ctx.callbackQuery && "data" in ctx.callbackQuery
       ? (ctx.callbackQuery.data as string)
       : "";
-  const slot = raw.replace("slot_student_", "");
 
   ctx.answerCbQuery();
+
+  const match = raw.match(/^slot_student_(MSK|SPB)_(\d+)$/);
+  const cityCode = (match?.[1] as "MSK" | "SPB") || "MSK";
+  const index = match ? parseInt(match[2], 10) : 0;
+  const slots = cityCode === "SPB" ? studentSlotsSPB : studentSlotsMSK;
+  const slotLabel = slots[index] ?? "неизвестный слот";
+  const slotId = `${slotLabel}_${cityCode}`;
 
   // Явно работаем через session как через any, чтобы не мешала типизация
   const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
   s.flow = "student";
   s.step = "surname";
   s.data = s.data || {};
-  s.data.slot = slot;
+  s.data.city = cityCode;
+  s.data.slot = slotId;
   (ctx as any).session = s;
 
   return ctx.reply(
-    `Вы выбрали слот: ${slot}\n\nВаша фамилия`
+    `Вы выбрали слот: ${slotLabel}\n\nВаша фамилия`
   );
 });
 
 // Остальные команды-информационные
-bot.command("schedule", (ctx) =>
-  ctx.reply(scheduleInfoText, scheduleInfoKeyboard)
-);
+bot.command("schedule", (ctx) => sendCityChoice(ctx));
 
 bot.command("faq", (ctx) =>
   ctx.reply("Ответы на самые частые вопросы", Markup.removeKeyboard())
