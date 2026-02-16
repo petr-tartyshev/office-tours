@@ -63,7 +63,7 @@ async function getOrCreateSheet(
   const name = slotToSheetName(sheetName);
   let sheet = workbook.getWorksheet(name);
   if (!sheet) {
-    sheet = workbook.addWorksheet(name, { properties: { outlineProperties: {} } });
+    sheet = workbook.addWorksheet(name);
   }
   return sheet;
 }
