@@ -1080,6 +1080,7 @@ bot.action("group_leader_confirm", async (ctx) => {
       faculty: data.faculty,
       participants: data.participants,
     });
+    setSlotConfirmed(data.slot);
   }
 
   const summary = formatRegistrationSummary(data);
@@ -1132,6 +1133,7 @@ bot.action("student_data_verification", async (ctx) => {
       university: data.university,
       faculty: data.faculty,
     });
+    setSlotConfirmed(data.slot);
   }
 
   const summary = formatRegistrationSummary(data);
