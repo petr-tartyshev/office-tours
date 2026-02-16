@@ -5,6 +5,7 @@ import * as path from "path";
 import {
   appendStudent,
   appendGroupLeader,
+  appendWaitingList,
   exportStudentsSlot,
   exportGroupLeadersSlot,
 } from "./excel-registrations";
@@ -20,11 +21,47 @@ dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 
+const getAdminPassword = (): string =>
+  process.env.ADMIN_PASSWORD || "ExcursionOffice2026!";
+
+const adminAuthenticatedIds = new Set<number>();
+
+const addAdmin = (userId: number) => {
+  adminAuthenticatedIds.add(userId);
+};
+
+const isAdmin = (ctx: any): boolean => {
+  const id = ctx.from?.id;
+  return id != null && adminAuthenticatedIds.has(id);
+};
+
+const adminInfoText = `✅ Вход под Администратором выполнен.
+Доступные команды:
+
+Выгрузка данных слота:
+/export_student [дата: 00 месяц, время: 00:00_MSK / _SPB]
+/export_group_leader [дата: 00 месяц, время: 00:00_MSK / _SPB]
+
+Добавление новых слотов:
+/add_slot_student [дата: 00 месяц, время: 00:00_MSK / _SPB]
+/add_slot_group_leader [дата: 00 месяц, время: 00:00_MSK / _SPB]
+
+Корректировка данных вручную:
+/change_export_student [дата: 00 месяц, время: 00:00_MSK / _SPB]
+/change_export_group_leader [дата: 00 месяц, время: 00:00_MSK / _SPB]
+
+Рассылки:
+/send_mailing [Текст сообщения]
+/send_mailing_waiting_list [дата: 00 месяц, время: 00:00_MSK / _SPB; Текст сообщения]
+
+Лист ожидания:
+/waiting_list`;
+
 if (!token) {
   throw new Error("TELEGRAM_BOT_TOKEN is not set in environment variables");
 }
 
-type RegistrationFlow = "student" | "group_leader";
+type RegistrationFlow = "student" | "group_leader" | "waiting_list";
 
 type RegistrationStep =
   | "surname"
@@ -44,7 +81,12 @@ type RegistrationStep =
   | "participantsBirthDate"
   | "editParticipantFio"
   | "editParticipantBirthDate"
-  | "groupLeaderConfirm";
+  | "groupLeaderConfirm"
+  | "waitingListSurname"
+  | "waitingListName"
+  | "waitingListPatronymic"
+  | "waitingListPhone"
+  | "waitingListEmail";
 
 interface RegistrationData {
   slot?: string;
@@ -81,6 +123,17 @@ bot.use(
 // Глобальный перехватчик ошибок, чтобы видеть проблемы в консоли
 bot.catch((err) => {
   console.error("Ошибка в боте:", err);
+});
+
+// Проверка пароля администратора (отдельным сообщением)
+bot.on("text", (ctx, next) => {
+  const text = ctx.message?.text?.trim();
+  const userId = ctx.from?.id;
+  if (text === getAdminPassword() && userId != null) {
+    addAdmin(userId);
+    return ctx.reply(adminInfoText);
+  }
+  return next();
 });
 
 // Вспомогательные функции
@@ -347,14 +400,11 @@ const showScheduleGroupLeader = (ctx: any) => {
   const city = getCityFromSession(ctx);
   const allSlots =
     city === "SPB" ? groupLeaderSlotsSPB : groupLeaderSlotsMSK;
-  const available = allSlots
-    .map((slot, index) => ({ slot, index }))
-    .filter(({ slot }) => !isSlotConfirmed(`${slot}_${city}`));
-  if (!available.length) {
+  if (!allSlots.length) {
     return ctx.reply(
       city === "SPB"
-        ? "Для Санкт-Петербурга пока нет доступных слотов для руководителей групп."
-        : "Для Москвы пока нет доступных слотов для руководителей групп."
+        ? "Для Санкт-Петербурга пока нет слотов для руководителей групп."
+        : "Для Москвы пока нет слотов для руководителей групп."
     );
   }
 
@@ -362,9 +412,11 @@ const showScheduleGroupLeader = (ctx: any) => {
   return ctx.reply(
     `Доступные слоты (${cityLabel}):`,
     Markup.inlineKeyboard(
-      available.map(({ slot, index }) => [
-        Markup.button.callback(slot, `slot_group_${city}_${index}`),
-      ])
+      allSlots.map((slot, index) => {
+        const booked = isSlotConfirmed(`${slot}_${city}`);
+        const label = booked ? `${slot} — Забронирован` : slot;
+        return [Markup.button.callback(label, `slot_group_${city}_${index}`)];
+      })
     )
   );
 };
@@ -372,14 +424,11 @@ const showScheduleGroupLeader = (ctx: any) => {
 const showScheduleStudent = (ctx: any) => {
   const city = getCityFromSession(ctx);
   const allSlots = city === "SPB" ? studentSlotsSPB : studentSlotsMSK;
-  const available = allSlots
-    .map((slot, index) => ({ slot, index }))
-    .filter(({ slot }) => !isSlotConfirmed(`${slot}_${city}`));
-  if (!available.length) {
+  if (!allSlots.length) {
     return ctx.reply(
       city === "SPB"
-        ? "Для Санкт-Петербурга пока нет доступных слотов для студентов."
-        : "Для Москвы пока нет доступных слотов для студентов."
+        ? "Для Санкт-Петербурга пока нет слотов для студентов."
+        : "Для Москвы пока нет слотов для студентов."
     );
   }
 
@@ -387,9 +436,11 @@ const showScheduleStudent = (ctx: any) => {
   return ctx.reply(
     `Доступные слоты (${cityLabel}):`,
     Markup.inlineKeyboard(
-      available.map(({ slot, index }) => [
-        Markup.button.callback(slot, `slot_student_${city}_${index}`),
-      ])
+      allSlots.map((slot, index) => {
+        const booked = isSlotConfirmed(`${slot}_${city}`);
+        const label = booked ? `${slot} — Забронирован` : slot;
+        return [Markup.button.callback(label, `slot_student_${city}_${index}`)];
+      })
     )
   );
 };
@@ -494,6 +545,21 @@ bot.action(/slot_group_.+/, (ctx) => {
   const slotLabel = slots[index] ?? "неизвестный слот";
   const slotId = `${slotLabel}_${cityCode}`;
 
+  if (isSlotConfirmed(slotId)) {
+    const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+    s.data = s.data || {};
+    s.data.slot = slotId;
+    s.data.city = cityCode;
+    (s.data as any).waitingListSlotLabel = slotLabel;
+    (ctx as any).session = s;
+    return ctx.reply(
+      "Этот слот уже забронирован.",
+      Markup.inlineKeyboard([
+        [Markup.button.callback("Вступить в лист ожидания", "waiting_list")],
+      ])
+    );
+  }
+
   const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
   s.flow = "group_leader";
   s.step = "surname";
@@ -523,6 +589,21 @@ bot.action(/slot_student_.+/, (ctx) => {
   const slotLabel = slots[index] ?? "неизвестный слот";
   const slotId = `${slotLabel}_${cityCode}`;
 
+  if (isSlotConfirmed(slotId)) {
+    const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+    s.data = s.data || {};
+    s.data.slot = slotId;
+    s.data.city = cityCode;
+    (s.data as any).waitingListSlotLabel = slotLabel;
+    (ctx as any).session = s;
+    return ctx.reply(
+      "Этот слот уже забронирован.",
+      Markup.inlineKeyboard([
+        [Markup.button.callback("Вступить в лист ожидания", "waiting_list")],
+      ])
+    );
+  }
+
   // Явно работаем через session как через any, чтобы не мешала типизация
   const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
   s.flow = "student";
@@ -535,6 +616,35 @@ bot.action(/slot_student_.+/, (ctx) => {
   return ctx.reply(
     `Вы выбрали слот: ${slotLabel}\n\nВаша фамилия`
   );
+});
+
+bot.action("waiting_list", (ctx) => {
+  ctx.answerCbQuery();
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  const slot = s.data?.slot;
+  if (!slot) {
+    return ctx.reply("Сначала выберите слот в расписании.");
+  }
+  s.flow = "waiting_list";
+  s.step = "waitingListSurname";
+  s.data = s.data || {};
+  (ctx as any).session = s;
+  return ctx.reply("Введите фамилию");
+});
+
+bot.command("waiting_list", (ctx) => {
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  const slot = s.data?.slot;
+  if (!slot) {
+    return ctx.reply(
+      "Чтобы вступить в лист ожидания, выберите слот в расписании и нажмите «Вступить в лист ожидания» под сообщением о забронированном слоте."
+    );
+  }
+  s.flow = "waiting_list";
+  s.step = "waitingListSurname";
+  s.data = s.data || {};
+  (ctx as any).session = s;
+  return ctx.reply("Введите фамилию");
 });
 
 // Остальные команды-информационные
@@ -893,6 +1003,62 @@ bot.on("text", async (ctx, next) => {
     }
   }
 
+  if (s.flow === "waiting_list") {
+    const slotLabel = (s.data as any).waitingListSlotLabel ?? s.data.slot ?? "слот";
+    switch (s.step) {
+      case "waitingListSurname":
+        s.data.surname = text;
+        s.step = "waitingListName";
+        (ctx as any).session = s;
+        return ctx.reply("Введите имя");
+
+      case "waitingListName":
+        s.data.name = text;
+        s.step = "waitingListPatronymic";
+        (ctx as any).session = s;
+        return ctx.reply("Введите отчество");
+
+      case "waitingListPatronymic":
+        s.data.patronymic = text;
+        s.step = "waitingListPhone";
+        (ctx as any).session = s;
+        return ctx.reply("Введите номер телефона (формат 79*********)");
+
+      case "waitingListPhone":
+        s.data.phone = text;
+        s.step = "waitingListEmail";
+        (ctx as any).session = s;
+        return ctx.reply("Введите почту");
+
+      case "waitingListEmail": {
+        s.data.email = text;
+        const userId = ctx.from?.id;
+        try {
+          await appendWaitingList({
+            telegramUserId: userId,
+            city: s.data.city ?? "MSK",
+            slot: s.data.slot ?? "",
+            surname: s.data.surname,
+            name: s.data.name,
+            patronymic: s.data.patronymic,
+            phone: s.data.phone,
+            email: s.data.email,
+          });
+        } catch (e) {
+          console.error("Ошибка записи в лист ожидания:", e);
+        }
+        resetSession(ctx);
+        return ctx.reply(
+          `Вы добавлены в лист ожидания на слот ${slotLabel}. Мы свяжемся с вами, если место освободится.`
+        );
+      }
+
+      default:
+        resetSession(ctx);
+        return ctx.reply("Начните заново: выберите слот в расписании и нажмите «Вступить в лист ожидания».");
+    }
+  }
+
   return next();
 });
 
@@ -1144,14 +1310,29 @@ bot.action("student_data_verification", async (ctx) => {
   );
 });
 
-// Экспорт данных в Excel по слоту
+// Команда для повторного показа панели администратора
+bot.command("admin_info", (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply(
+      "Доступ запрещён. Введите пароль администратора отдельным сообщением."
+    );
+  }
+  return ctx.reply(adminInfoText);
+});
+
+// Экспорт данных в Excel по слоту (только для администратора)
 bot.command("export_student", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply(
+      "Доступ запрещён. Введите пароль администратора отдельным сообщением."
+    );
+  }
   const text = ctx.message?.text || "";
   const args = text.split(" ").slice(1).join(" ").trim();
 
   if (!args) {
     return ctx.reply(
-      "Укажите слот, например:\n/export_student 25 февраля, 15:00"
+      "Укажите слот, например:\n/export_student 25 февраля, 15:00_MSK"
     );
   }
 
@@ -1169,12 +1350,17 @@ bot.command("export_student", async (ctx) => {
 });
 
 bot.command("export_group_leader", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply(
+      "Доступ запрещён. Введите пароль администратора отдельным сообщением."
+    );
+  }
   const text = ctx.message?.text || "";
   const args = text.split(" ").slice(1).join(" ").trim();
 
   if (!args) {
     return ctx.reply(
-      "Укажите слот, например:\n/export_group_leader 20 февраля, 15:00"
+      "Укажите слот, например:\n/export_group_leader 20 февраля, 15:00_MSK"
     );
   }
 

@@ -5,6 +5,8 @@ import * as fs from "fs";
 const REGISTRATIONS_DIR = path.join(process.cwd(), "registrations");
 const STUDENTS_FILE = path.join(REGISTRATIONS_DIR, "students.xlsx");
 const GROUP_LEADERS_FILE = path.join(REGISTRATIONS_DIR, "group_leaders.xlsx");
+const WAITING_LIST_FILE = path.join(REGISTRATIONS_DIR, "waiting_list.xlsx");
+const WAITING_LIST_SHEET = "Лист ожидания";
 
 const MAX_SHEET_NAME_LENGTH = 31;
 const INVALID_SHEET_CHARS = /[\\/*?:\[\]]/g;
@@ -207,4 +209,48 @@ export async function exportStudentsSlot(slot: string): Promise<string | null> {
 
 export async function exportGroupLeadersSlot(slot: string): Promise<string | null> {
   return exportSingleSheetWorkbook(GROUP_LEADERS_FILE, slot, "group_leaders");
+}
+
+export interface WaitingListData {
+  telegramUserId?: number;
+  city: string;
+  slot: string;
+  surname?: string;
+  name?: string;
+  patronymic?: string;
+  phone?: string;
+  email?: string;
+}
+
+const WAITING_LIST_HEADERS = [
+  "Telegram user id",
+  "Город",
+  "Слот",
+  "Фамилия",
+  "Имя",
+  "Отчество",
+  "Телефон",
+  "Почта",
+];
+
+export async function appendWaitingList(data: WaitingListData): Promise<void> {
+  ensureDir();
+  const workbook = await getOrCreateWorkbook(WAITING_LIST_FILE);
+  let sheet = workbook.getWorksheet(WAITING_LIST_SHEET);
+  if (!sheet) {
+    sheet = workbook.addWorksheet(WAITING_LIST_SHEET);
+    sheet.addRow(WAITING_LIST_HEADERS);
+  }
+  const cityLabel = data.city === "MSK" ? "Москва" : data.city === "SPB" ? "Санкт-Петербург" : data.city;
+  sheet.addRow([
+    data.telegramUserId ?? "",
+    cityLabel,
+    data.slot ?? "",
+    data.surname ?? "",
+    data.name ?? "",
+    data.patronymic ?? "",
+    data.phone ?? "",
+    data.email ?? "",
+  ]);
+  await workbook.xlsx.writeFile(WAITING_LIST_FILE);
 }

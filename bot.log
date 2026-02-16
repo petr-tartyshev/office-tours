@@ -1,0 +1,4 @@
+
+> excursion-bot@0.1.0 dev
+> ts-node src/bot.ts
+
