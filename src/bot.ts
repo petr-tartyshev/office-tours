@@ -1,5 +1,13 @@
 import { Telegraf, Markup, session } from "telegraf";
 import * as dotenv from "dotenv";
+import * as fs from "fs";
+import * as path from "path";
+import {
+  appendStudent,
+  appendGroupLeader,
+  exportStudentsSlot,
+  exportGroupLeadersSlot,
+} from "./excel-registrations";
 
 dotenv.config();
 
@@ -866,7 +874,7 @@ bot.action("group_leader_data_verification", (ctx) => {
   );
 });
 
-bot.action("group_leader_confirm", (ctx) => {
+bot.action("group_leader_confirm", async (ctx) => {
   const s = (ctx as any).session as SessionData | undefined;
   const data = s?.data;
 
@@ -878,6 +886,24 @@ bot.action("group_leader_confirm", (ctx) => {
     );
   }
 
+  try {
+    await appendGroupLeader({
+      slot: data.slot ?? "",
+      surname: data.surname,
+      name: data.name,
+      patronymic: data.patronymic,
+      birthDate: data.birthDate,
+      email: data.email,
+      phone: data.phone,
+      institutionType: data.institutionType,
+      institutionName: data.institutionName,
+      faculty: data.faculty,
+      participants: data.participants,
+    });
+  } catch (e) {
+    console.error("Ошибка записи в Excel (руководитель группы):", e);
+  }
+
   const summary = formatRegistrationSummary(data);
   resetSession(ctx);
 
@@ -886,7 +912,7 @@ bot.action("group_leader_confirm", (ctx) => {
   );
 });
 
-bot.action("student_data_verification", (ctx) => {
+bot.action("student_data_verification", async (ctx) => {
   const s = (ctx as any).session as SessionData | undefined;
   const data = s?.data;
 
@@ -898,12 +924,75 @@ bot.action("student_data_verification", (ctx) => {
     );
   }
 
+  try {
+    await appendStudent({
+      slot: data.slot ?? "",
+      surname: data.surname,
+      name: data.name,
+      patronymic: data.patronymic,
+      birthDate: data.birthDate,
+      email: data.email,
+      phone: data.phone,
+      university: data.university,
+      faculty: data.faculty,
+    });
+  } catch (e) {
+    console.error("Ошибка записи в Excel (студент):", e);
+  }
+
   const summary = formatRegistrationSummary(data);
   resetSession(ctx);
 
   return ctx.editMessageText(
     `Заявка подтверждена!\n\n${summary}\n\nСпасибо, что записались на экскурсию.`
   );
+});
+
+// Экспорт данных в Excel по слоту
+bot.command("export_student", async (ctx) => {
+  const text = ctx.message?.text || "";
+  const args = text.split(" ").slice(1).join(" ").trim();
+
+  if (!args) {
+    return ctx.reply(
+      "Укажите слот, например:\n/export_student 25 февраля, 15:00"
+    );
+  }
+
+  const filePath = await exportStudentsSlot(args);
+  if (!filePath) {
+    return ctx.reply(
+      "Не найдено данных для этого слота (студенты). Убедитесь, что слот указан так же, как в боте."
+    );
+  }
+
+  return ctx.replyWithDocument({
+    source: fs.createReadStream(filePath),
+    filename: path.basename(filePath),
+  });
+});
+
+bot.command("export_group_leader", async (ctx) => {
+  const text = ctx.message?.text || "";
+  const args = text.split(" ").slice(1).join(" ").trim();
+
+  if (!args) {
+    return ctx.reply(
+      "Укажите слот, например:\n/export_group_leader 20 февраля, 15:00"
+    );
+  }
+
+  const filePath = await exportGroupLeadersSlot(args);
+  if (!filePath) {
+    return ctx.reply(
+      "Не найдено данных для этого слота (руководители групп). Убедитесь, что слот указан так же, как в боте."
+    );
+  }
+
+  return ctx.replyWithDocument({
+    source: fs.createReadStream(filePath),
+    filename: path.basename(filePath),
+  });
 });
 
 bot
