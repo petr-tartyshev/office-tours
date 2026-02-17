@@ -15,6 +15,8 @@ import {
   isSlotConfirmed,
   setSlotConfirmed,
   setSlotAvailable,
+  getStudentSlotCount,
+  incrementStudentSlotCount,
 } from "./registrations-store";
 
 dotenv.config();
@@ -371,6 +373,7 @@ bot.action("role_student", (ctx) => {
 });
 
 // Расписание по городам
+const STUDENT_SLOT_CAPACITY = 15;
 const groupLeaderSlotsMSK = [
   "20 февраля, 15:00",
   "22 февраля, 11:00",
@@ -434,8 +437,14 @@ const showScheduleStudent = (ctx: any) => {
     `Доступные слоты (${cityLabel}):`,
     Markup.inlineKeyboard(
       allSlots.map((slot, index) => {
-        const booked = isSlotConfirmed(`${slot}_${city}`);
-        const label = booked ? `${slot} — Забронирован` : slot;
+        const slotId = `${slot}_${city}`;
+        const used = getStudentSlotCount(slotId);
+        const remaining = Math.max(0, STUDENT_SLOT_CAPACITY - used);
+        const availabilityLabel =
+          remaining > 0
+            ? `Доступно ${remaining}/${STUDENT_SLOT_CAPACITY}`
+            : "Мест нет";
+        const label = `${slot} — ${availabilityLabel}`;
         return [Markup.button.callback(label, `slot_student_${city}_${index}`)];
       })
     )
@@ -586,7 +595,8 @@ bot.action(/slot_student_.+/, (ctx) => {
   const slotLabel = slots[index] ?? "неизвестный слот";
   const slotId = `${slotLabel}_${cityCode}`;
 
-  if (isSlotConfirmed(slotId)) {
+  const used = getStudentSlotCount(slotId);
+  if (used >= STUDENT_SLOT_CAPACITY) {
     const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
     s.data = s.data || {};
     s.data.slot = slotId;
@@ -702,7 +712,11 @@ bot.action("reminder_confirm", (ctx) => {
   const reg = getLastRegistration(userId);
   if (!reg?.slot)
     return ctx.reply("Нет данных о регистрации.");
-  setSlotConfirmed(reg.slot);
+  if (reg.flow === "group_leader") {
+    setSlotConfirmed(reg.slot);
+  } else if (reg.flow === "student") {
+    incrementStudentSlotCount(reg.slot, 1);
+  }
   return ctx.reply("Спасибо, что подтвердили участие в экскурсии!");
 });
 
@@ -713,7 +727,12 @@ bot.action("reminder_cancel", (ctx) => {
   const reg = getLastRegistration(userId);
   if (!reg?.slot)
     return ctx.reply("Нет данных о регистрации.");
-  setSlotAvailable(reg.slot);
+  if (reg.flow === "group_leader") {
+    setSlotAvailable(reg.slot);
+  } else if (reg.flow === "student") {
+    // Уменьшаем счётчик, но не даём уйти в минус
+    incrementStudentSlotCount(reg.slot, -1);
+  }
   return ctx.reply(
     "Вы отменили участие. Слот снова доступен для записи."
   );
@@ -1298,7 +1317,7 @@ bot.action("student_data_verification", async (ctx) => {
       university: data.university,
       faculty: data.faculty,
     });
-    setSlotConfirmed(data.slot);
+    // Счётчик фактических регистраций увеличиваем только после отдельного подтверждения участия
   }
 
   const summary = formatRegistrationSummary(data);
