@@ -312,10 +312,8 @@ bot.command("approval", (ctx) => ctx.reply(approvalText, approvalKeyboard));
 // 2. После «Согласен» — одновременно текст «Спасибо!» и главное меню
 bot.action("approval_accept", async (ctx) => {
   ctx.answerCbQuery();
-  await Promise.all([
-    ctx.editMessageText("Спасибо! Можно продолжать 🚀"),
-    ctx.reply(mainMenuText, mainMenuKeyboard),
-  ]);
+  await ctx.reply("Спасибо! Можно продолжать 🚀");
+  return ctx.reply(mainMenuText, mainMenuKeyboard);
 });
 
 // Главное меню (команды для тестирования)
@@ -360,7 +358,7 @@ bot.action("role_group_leader", (ctx) => {
   ctx.answerCbQuery();
   resetSession(ctx);
   return ctx
-    .editMessageText("Вы выбрали: Руководитель группы.")
+    .reply("Вы выбрали: Руководитель группы.")
     .then(() => showScheduleGroupLeader(ctx));
 });
 
@@ -368,7 +366,7 @@ bot.action("role_student", (ctx) => {
   ctx.answerCbQuery();
   resetSession(ctx);
   return ctx
-    .editMessageText("Вы выбрали: Студент.")
+    .reply("Вы выбрали: Студент.")
     .then(() => showScheduleStudent(ctx));
 });
 
@@ -495,7 +493,7 @@ bot.action("sity_MSK", (ctx) => {
   s.data.city = "MSK";
   (ctx as any).session = s;
 
-  return ctx.editMessageText(scheduleInfoText, scheduleInfoKeyboard);
+  return ctx.reply(scheduleInfoText, scheduleInfoKeyboard);
 });
 
 bot.action("sity_SPB", (ctx) => {
@@ -506,7 +504,7 @@ bot.action("sity_SPB", (ctx) => {
   s.data.city = "SPB";
   (ctx as any).session = s;
 
-  return ctx.editMessageText(scheduleInfoText, scheduleInfoKeyboard);
+  return ctx.reply(scheduleInfoText, scheduleInfoKeyboard);
 });
 
 bot.command("schedule_info", (ctx) => sendCityChoice(ctx));
@@ -524,7 +522,7 @@ bot.action("schedule_info_student", (ctx) => {
 // Кнопка «Расписание» в /main ведёт к выбору города
 bot.action("main_schedule_info", (ctx) => {
   ctx.answerCbQuery();
-  return ctx.editMessageText("Выберите город", cityKeyboard);
+  return ctx.reply("Выберите город", cityKeyboard);
 });
 
 // Обработка выбора слота руководителем группы
@@ -700,28 +698,30 @@ bot.command("reminder_9am", (ctx) => {
 bot.action("reminder_confirm", (ctx) => {
   ctx.answerCbQuery();
   const userId = ctx.from?.id;
-  if (!userId) return ctx.editMessageText("Ошибка.");
+  if (!userId) return ctx.reply("Ошибка.");
   const reg = getLastRegistration(userId);
-  if (!reg?.slot) return ctx.editMessageText("Нет данных о регистрации.");
+  if (!reg?.slot)
+    return ctx.reply("Нет данных о регистрации.");
   setSlotConfirmed(reg.slot);
-  return ctx.editMessageText("Спасибо, что подтвердили участие в экскурсии!");
+  return ctx.reply("Спасибо, что подтвердили участие в экскурсии!");
 });
 
 bot.action("reminder_cancel", (ctx) => {
   ctx.answerCbQuery();
   const userId = ctx.from?.id;
-  if (!userId) return ctx.editMessageText("Ошибка.");
+  if (!userId) return ctx.reply("Ошибка.");
   const reg = getLastRegistration(userId);
-  if (!reg?.slot) return ctx.editMessageText("Нет данных о регистрации.");
+  if (!reg?.slot)
+    return ctx.reply("Нет данных о регистрации.");
   setSlotAvailable(reg.slot);
-  return ctx.editMessageText(
+  return ctx.reply(
     "Вы отменили участие. Слот снова доступен для записи."
   );
 });
 
 bot.action("reminder_change", (ctx) => {
   ctx.answerCbQuery();
-  return ctx.editMessageText(
+  return ctx.reply(
     "Если вы хотите изменить дату или время экскурсии, пройдите запись заново: меню → Расписание."
   );
 });
@@ -1206,7 +1206,7 @@ bot.action("group_leader_confirm", async (ctx) => {
   ctx.answerCbQuery();
 
   if (!data) {
-    return ctx.editMessageText(
+    return ctx.reply(
       "Не удалось найти данные регистрации. Пожалуйста, начните заново: меню → Расписание → Руководитель группы."
     );
   }
@@ -1251,7 +1251,7 @@ bot.action("group_leader_confirm", async (ctx) => {
   const summary = formatRegistrationSummary(data);
   resetSession(ctx);
 
-  return ctx.editMessageText(
+  return ctx.reply(
     `Заявка руководителя группы подтверждена!\n\n${summary}\n\nСпасибо, что записались на экскурсию.`
   );
 });
@@ -1263,7 +1263,7 @@ bot.action("student_data_verification", async (ctx) => {
   ctx.answerCbQuery();
 
   if (!data) {
-    return ctx.editMessageText(
+    return ctx.reply(
       "Не удалось найти данные регистрации. Пожалуйста, начните заново: меню → Расписание → Студент вуза."
     );
   }
@@ -1304,7 +1304,7 @@ bot.action("student_data_verification", async (ctx) => {
   const summary = formatRegistrationSummary(data);
   resetSession(ctx);
 
-  return ctx.editMessageText(
+  return ctx.reply(
     `Заявка подтверждена!\n\n${summary}\n\nСпасибо, что записались на экскурсию.`
   );
 });
