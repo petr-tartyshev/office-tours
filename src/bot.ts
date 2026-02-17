@@ -126,14 +126,29 @@ bot.catch((err) => {
 });
 
 // Проверка пароля администратора (отдельным сообщением)
-bot.on("text", (ctx, next) => {
-  const text = ctx.message?.text?.trim();
+bot.on("text", async (ctx, next) => {
+  const raw = ctx.message?.text;
+  if (raw == null) return next();
+  const text = raw.trim();
+  if (text.startsWith("/")) return next();
   const userId = ctx.from?.id;
-  if (text === getAdminPassword() && userId != null) {
-    addAdmin(userId);
-    return ctx.reply(adminInfoText);
+  const expected = getAdminPassword();
+  if (userId == null) return next();
+
+  if (text !== expected) {
+    if (text.length >= 6 && text.length <= 80) {
+      await ctx.reply("Неверный пароль.");
+    }
+    return next();
   }
-  return next();
+
+  addAdmin(userId);
+  try {
+    await ctx.reply(adminInfoText);
+  } catch (e) {
+    console.error("Ошибка отправки панели администратора:", e);
+    await ctx.reply("Вход выполнен, но не удалось отправить список команд. Напишите /admin_info.");
+  }
 });
 
 // Вспомогательные функции
