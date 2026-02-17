@@ -5,7 +5,7 @@ import * as fs from "fs";
 const REGISTRATIONS_DIR = path.join(process.cwd(), "registrations");
 const STUDENTS_FILE = path.join(REGISTRATIONS_DIR, "students.xlsx");
 const GROUP_LEADERS_FILE = path.join(REGISTRATIONS_DIR, "group_leaders.xlsx");
-const WAITING_LIST_FILE = path.join(REGISTRATIONS_DIR, "waiting_list.xlsx");
+export const WAITING_LIST_FILE = path.join(REGISTRATIONS_DIR, "waiting_list.xlsx");
 const WAITING_LIST_SHEET = "Лист ожидания";
 
 const MAX_SHEET_NAME_LENGTH = 31;

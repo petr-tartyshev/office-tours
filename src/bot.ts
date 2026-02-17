@@ -2,12 +2,14 @@ import { Telegraf, Markup, session } from "telegraf";
 import * as dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
+import * as ExcelJS from "exceljs";
 import {
   appendStudent,
   appendGroupLeader,
   appendWaitingList,
   exportStudentsSlot,
   exportGroupLeadersSlot,
+  WAITING_LIST_FILE,
 } from "./excel-registrations";
 import {
   getLastRegistration,
@@ -18,6 +20,7 @@ import {
   getStudentSlotCount,
   incrementStudentSlotCount,
 } from "./registrations-store";
+import { recordUserFromContext, exportUsersToExcel } from "./users-store";
 
 dotenv.config();
 
@@ -54,6 +57,12 @@ const adminInfoText = `✅ Вход под Администратором вып
 Рассылки:
 /send_mailing [Текст сообщения]
 /send_mailing_waiting_list [дата: 00 месяц, время: 00:00_MSK / _SPB; Текст сообщения]
+
+Лист ожидания:
+/waiting_list_admin
+
+Экспорт пользователей:
+/export_data
 
 Лист ожидания:
 /waiting_list`;
@@ -120,6 +129,16 @@ bot.use(
     defaultSession: () => ({} as SessionData),
   })
 );
+
+// Глобально запоминаем всех пользователей, которые взаимодействуют с ботом
+bot.use((ctx, next) => {
+  try {
+    recordUserFromContext(ctx);
+  } catch (e) {
+    console.error("Ошибка записи пользователя в users-store:", e);
+  }
+  return next();
+});
 
 // Глобальный перехватчик ошибок, чтобы видеть проблемы в консоли
 bot.catch((err) => {
@@ -1393,6 +1412,136 @@ bot.command("export_group_leader", async (ctx) => {
     source: fs.createReadStream(filePath),
     filename: path.basename(filePath),
   });
+});
+
+// Выгрузка листа ожидания (для администратора)
+bot.command("waiting_list_admin", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply(
+      "Доступ запрещён. Введите пароль администратора отдельным сообщением."
+    );
+  }
+
+  if (!fs.existsSync(WAITING_LIST_FILE)) {
+    return ctx.reply("Файл листа ожидания пока не создан.");
+  }
+
+  try {
+    return await ctx.replyWithDocument({
+      source: fs.createReadStream(WAITING_LIST_FILE),
+      filename: path.basename(WAITING_LIST_FILE),
+    });
+  } catch (e) {
+    console.error("Ошибка отправки файла листа ожидания:", e);
+    return ctx.reply("Не удалось отправить файл листа ожидания.");
+  }
+});
+
+// Рассылка по листу ожидания для конкретного слота
+bot.command("send_mailing_waiting_list", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply(
+      "Доступ запрещён. Введите пароль администратора отдельным сообщением."
+    );
+  }
+
+  const text = ctx.message?.text || "";
+  const [firstLine, ...restLines] = text.split("\n");
+  const [command, ...slotParts] = firstLine.split(" ");
+  const slot = slotParts.join(" ").trim();
+  const messageText = restLines.join("\n").trim();
+
+  if (!slot || !messageText) {
+    return ctx.reply(
+      "Использование:\n/send_mailing_waiting_list 20 февраля, 15:00_MSK\nТекст сообщения"
+    );
+  }
+
+  if (!fs.existsSync(WAITING_LIST_FILE)) {
+    return ctx.reply(
+      "Файл листа ожидания пока не создан. Нет пользователей для рассылки."
+    );
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.readFile(WAITING_LIST_FILE);
+  } catch (e) {
+    console.error("Ошибка чтения waiting_list.xlsx:", e);
+    return ctx.reply("Не удалось прочитать файл листа ожидания.");
+  }
+
+  const sheet = workbook.getWorksheet("Лист ожидания");
+  if (!sheet) {
+    return ctx.reply("В файле листа ожидания нет листа с данными.");
+  }
+
+  const userIds = new Set<number>();
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // пропускаем заголовок
+    const slotCell = row.getCell(3).value;
+    if (typeof slotCell !== "string") return;
+    if (slotCell.trim() !== slot) return;
+
+    const idCell = row.getCell(1).value;
+    if (idCell == null) return;
+    const idNum =
+      typeof idCell === "number"
+        ? idCell
+        : Number(
+            typeof idCell === "object" && "toString" in idCell
+              ? (idCell as any).toString()
+              : idCell
+          );
+    if (!Number.isFinite(idNum)) return;
+    userIds.add(idNum);
+  });
+
+  if (!userIds.size) {
+    return ctx.reply(
+      `В листе ожидания нет пользователей для слота "${slot}".`
+    );
+  }
+
+  let success = 0;
+  let failed = 0;
+
+  for (const id of userIds) {
+    try {
+      await ctx.telegram.sendMessage(id, messageText);
+      success += 1;
+    } catch (e) {
+      failed += 1;
+      console.error(
+        `Не удалось отправить сообщение пользователю ${id} из листа ожидания:`,
+        e
+      );
+    }
+  }
+
+  return ctx.reply(
+    `Рассылка по листу ожидания для слота "${slot}" завершена.\nУспешно: ${success}\nОшибок: ${failed}`
+  );
+});
+
+// Экспорт базы всех пользователей, взаимодействовавших с ботом
+bot.command("export_data", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply(
+      "Доступ запрещён. Введите пароль администратора отдельным сообщением."
+    );
+  }
+
+  try {
+    const filePath = await exportUsersToExcel();
+    return ctx.replyWithDocument({
+      source: fs.createReadStream(filePath),
+      filename: path.basename(filePath),
+    });
+  } catch (e) {
+    console.error("Ошибка экспорта данных пользователей:", e);
+    return ctx.reply("Не удалось выгрузить список пользователей.");
+  }
 });
 
 bot
