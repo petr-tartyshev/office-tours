@@ -6,7 +6,7 @@ const REGISTRATIONS_DIR = path.join(process.cwd(), "registrations");
 const USERS_STORE_FILE = path.join(REGISTRATIONS_DIR, "users_store.json");
 const USERS_XLSX_FILE = path.join(REGISTRATIONS_DIR, "users.xlsx");
 
-interface StoredUser {
+export interface StoredUser {
   id: number;
   username?: string;
   firstName?: string;
@@ -84,4 +84,10 @@ export async function exportUsersToExcel(): Promise<string> {
   await workbook.xlsx.writeFile(USERS_XLSX_FILE);
   return USERS_XLSX_FILE;
 }
+
+export function getAllUsers(): StoredUser[] {
+  const store = readStore();
+  return Object.values(store.users);
+}
+
 

@@ -20,7 +20,11 @@ import {
   getStudentSlotCount,
   incrementStudentSlotCount,
 } from "./registrations-store";
-import { recordUserFromContext, exportUsersToExcel } from "./users-store";
+import {
+  recordUserFromContext,
+  exportUsersToExcel,
+  getAllUsers,
+} from "./users-store";
 
 dotenv.config();
 
@@ -1435,6 +1439,49 @@ bot.command("waiting_list_admin", async (ctx) => {
     console.error("Ошибка отправки файла листа ожидания:", e);
     return ctx.reply("Не удалось отправить файл листа ожидания.");
   }
+});
+
+// Общая рассылка всем пользователям, которые когда-либо взаимодействовали с ботом
+bot.command("send_mailing", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply(
+      "Доступ запрещён. Введите пароль администратора отдельным сообщением."
+    );
+  }
+
+  const text = ctx.message?.text || "";
+  const messageText = text.replace("/send_mailing", "").trim();
+
+  if (!messageText) {
+    return ctx.reply(
+      "Использование:\n/send_mailing Текст сообщения для всех пользователей"
+    );
+  }
+
+  const users = getAllUsers();
+  if (!users.length) {
+    return ctx.reply("Пока нет пользователей для рассылки.");
+  }
+
+  let success = 0;
+  let failed = 0;
+
+  for (const user of users) {
+    try {
+      await ctx.telegram.sendMessage(user.id, messageText);
+      success += 1;
+    } catch (e) {
+      failed += 1;
+      console.error(
+        `Не удалось отправить сообщение пользователю ${user.id}:`,
+        e
+      );
+    }
+  }
+
+  return ctx.reply(
+    `Рассылка завершена.\nУспешно: ${success}\nОшибок: ${failed}`
+  );
 });
 
 // Рассылка по листу ожидания для конкретного слота
