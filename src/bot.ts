@@ -22,7 +22,7 @@ dotenv.config();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 
 const getAdminPassword = (): string =>
-  process.env.ADMIN_PASSWORD || "ExcursionOffice2026!";
+  process.env.ADMIN_PASSWORD || "Kp9#mN2$xL7qR4vWz";
 
 const adminAuthenticatedIds = new Set<number>();
 
