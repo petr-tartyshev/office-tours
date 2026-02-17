@@ -700,6 +700,40 @@ const reminderKeyboard = Markup.inlineKeyboard([
   [Markup.button.callback("Задать вопрос", "reminder_question")],
 ]);
 
+const rulesKeyboard = Markup.inlineKeyboard([
+  [Markup.button.callback("Ознакомлен", "rules_ack")],
+]);
+
+const FEEDBACK_FORM_TEXT = "Спасибо, что пришли в гости! Заполните форму";
+const feedbackKeyboardMSK = Markup.inlineKeyboard([
+  [Markup.button.url("Заполнить форму", "https://www.google.com")],
+]);
+const feedbackKeyboardSPB = Markup.inlineKeyboard([
+  [Markup.button.url("Заполнить форму", "https://ya.ru")],
+]);
+
+/** Рассылка сразу после регистрации: правила, два напоминания, форма обратной связи (по городу слота). */
+async function sendPostRegistrationMailings(
+  ctx: any,
+  userId: number
+): Promise<void> {
+  const reg = getLastRegistration(userId);
+  if (!reg) return;
+  const summary = formatRegistrationSummary(reg.data as RegistrationData);
+  const reminderText = `Вы зарегистрировались на экскурсию в Офис. Данные вашей заявки:\n\n${summary}`;
+  const slot = reg.data?.slot ?? "";
+  const isSPB = slot.endsWith("_SPB");
+  const feedbackKeyboard = isSPB ? feedbackKeyboardSPB : feedbackKeyboardMSK;
+  try {
+    await ctx.telegram.sendMessage(userId, "Правила посещения офиса", rulesKeyboard);
+    await ctx.telegram.sendMessage(userId, reminderText, reminderKeyboard);
+    await ctx.telegram.sendMessage(userId, reminderText, reminderKeyboard);
+    await ctx.telegram.sendMessage(userId, FEEDBACK_FORM_TEXT, feedbackKeyboard);
+  } catch (e) {
+    console.error("Ошибка рассылки после регистрации:", e);
+  }
+}
+
 bot.command("reminder_3day", (ctx) => {
   const userId = ctx.from?.id;
   if (!userId) return ctx.reply("Не удалось определить пользователя.");
@@ -799,6 +833,14 @@ bot.command("feedback_form", (ctx) =>
       ],
     ])
   )
+);
+
+bot.command("feedback_form_MSK", (ctx) =>
+  ctx.reply(FEEDBACK_FORM_TEXT, feedbackKeyboardMSK)
+);
+
+bot.command("feedback_form_SPB", (ctx) =>
+  ctx.reply(FEEDBACK_FORM_TEXT, feedbackKeyboardSPB)
 );
 
 // Специальная стейдж-команда: удалить данные пользователя и остановить бота
@@ -1293,9 +1335,10 @@ bot.action("group_leader_confirm", async (ctx) => {
   const summary = formatRegistrationSummary(data);
   resetSession(ctx);
 
-  return ctx.reply(
+  await ctx.reply(
     `Заявка руководителя группы подтверждена!\n\n${summary}\n\nСпасибо, что записались на экскурсию.`
   );
+  if (userId) await sendPostRegistrationMailings(ctx, userId);
 });
 
 bot.action("student_data_verification", async (ctx) => {
@@ -1346,9 +1389,10 @@ bot.action("student_data_verification", async (ctx) => {
   const summary = formatRegistrationSummary(data);
   resetSession(ctx);
 
-  return ctx.reply(
+  await ctx.reply(
     `Заявка подтверждена!\n\n${summary}\n\nСпасибо, что записались на экскурсию.`
   );
+  if (userId) await sendPostRegistrationMailings(ctx, userId);
 });
 
 // Команда для повторного показа панели администратора
