@@ -22,7 +22,7 @@ dotenv.config();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 
 const getAdminPassword = (): string =>
-  process.env.ADMIN_PASSWORD || "Kp9#mN2$xL7qR4vWz";
+  process.env.ADMIN_PASSWORD || "ExcursionOffice2026!";
 
 const adminAuthenticatedIds = new Set<number>();
 
@@ -35,7 +35,7 @@ const isAdmin = (ctx: any): boolean => {
   return id != null && adminAuthenticatedIds.has(id);
 };
 
-const adminInfoText = `Доступные команды администратора:
+const adminInfoText = `✅ Вход под Администратором выполнен.
 Доступные команды:
 
 Выгрузка данных слота:
@@ -126,31 +126,14 @@ bot.catch((err) => {
 });
 
 // Проверка пароля администратора (отдельным сообщением)
-bot.on("text", async (ctx, next) => {
-  const raw = ctx.message?.text;
-  if (raw == null) return next();
-  const text = raw.trim();
-  if (text.startsWith("/")) return next();
+bot.on("text", (ctx, next) => {
+  const text = ctx.message?.text?.trim();
   const userId = ctx.from?.id;
-  const expected = getAdminPassword();
-  if (userId == null) return next();
-
-  if (text !== expected) {
-    if (text.length >= 6 && text.length <= 80) {
-      await ctx.reply("Неверный пароль.");
-    }
-    return next();
+  if (text === getAdminPassword() && userId != null) {
+    addAdmin(userId);
+    return ctx.reply(adminInfoText);
   }
-
-  addAdmin(userId);
-  try {
-    await ctx.reply(adminInfoText);
-  } catch (e) {
-    console.error("Ошибка отправки панели администратора:", e);
-    await ctx.reply(
-      "Вход выполнен, но не удалось отправить список команд. Напишите /admin_info."
-    );
-  }
+  return next();
 });
 
 // Вспомогательные функции
@@ -327,11 +310,13 @@ bot.start(async (ctx) => {
 
 bot.command("approval", (ctx) => ctx.reply(approvalText, approvalKeyboard));
 
-// 2. После «Согласен» — новые сообщения (переписка остаётся в чате)
+// 2. После «Согласен» — одновременно текст «Спасибо!» и главное меню
 bot.action("approval_accept", async (ctx) => {
   ctx.answerCbQuery();
-  await ctx.reply("Спасибо! Можно продолжать 🚀");
-  return ctx.reply(mainMenuText, mainMenuKeyboard);
+  await Promise.all([
+    ctx.editMessageText("Спасибо! Можно продолжать 🚀"),
+    ctx.reply(mainMenuText, mainMenuKeyboard),
+  ]);
 });
 
 // Главное меню (команды для тестирования)
@@ -371,17 +356,21 @@ const sendCityChoice = (ctx: any) => {
 
 bot.command("sity", (ctx) => sendCityChoice(ctx));
 
-// 3. После выбора роли — новое сообщение и слоты (переписка остаётся)
+// 3. После выбора роли сразу показываем слоты (без упоминания команд)
 bot.action("role_group_leader", (ctx) => {
   ctx.answerCbQuery();
   resetSession(ctx);
-  return ctx.reply("Вы выбрали: Руководитель группы.").then(() => showScheduleGroupLeader(ctx));
+  return ctx
+    .editMessageText("Вы выбрали: Руководитель группы.")
+    .then(() => showScheduleGroupLeader(ctx));
 });
 
 bot.action("role_student", (ctx) => {
   ctx.answerCbQuery();
   resetSession(ctx);
-  return ctx.reply("Вы выбрали: Студент.").then(() => showScheduleStudent(ctx));
+  return ctx
+    .editMessageText("Вы выбрали: Студент.")
+    .then(() => showScheduleStudent(ctx));
 });
 
 // Расписание по городам
@@ -507,7 +496,7 @@ bot.action("sity_MSK", (ctx) => {
   s.data.city = "MSK";
   (ctx as any).session = s;
 
-  return ctx.reply(scheduleInfoText, scheduleInfoKeyboard);
+  return ctx.editMessageText(scheduleInfoText, scheduleInfoKeyboard);
 });
 
 bot.action("sity_SPB", (ctx) => {
@@ -518,7 +507,7 @@ bot.action("sity_SPB", (ctx) => {
   s.data.city = "SPB";
   (ctx as any).session = s;
 
-  return ctx.reply(scheduleInfoText, scheduleInfoKeyboard);
+  return ctx.editMessageText(scheduleInfoText, scheduleInfoKeyboard);
 });
 
 bot.command("schedule_info", (ctx) => sendCityChoice(ctx));
@@ -533,10 +522,10 @@ bot.action("schedule_info_student", (ctx) => {
   return showScheduleStudent(ctx);
 });
 
-// Кнопка «Расписание» в /main — новое сообщение с выбором города
+// Кнопка «Расписание» в /main ведёт к выбору города
 bot.action("main_schedule_info", (ctx) => {
   ctx.answerCbQuery();
-  return ctx.reply("Выберите город", cityKeyboard);
+  return ctx.editMessageText("Выберите город", cityKeyboard);
 });
 
 // Обработка выбора слота руководителем группы
@@ -712,28 +701,28 @@ bot.command("reminder_9am", (ctx) => {
 bot.action("reminder_confirm", (ctx) => {
   ctx.answerCbQuery();
   const userId = ctx.from?.id;
-  if (!userId) return ctx.reply("Ошибка.");
+  if (!userId) return ctx.editMessageText("Ошибка.");
   const reg = getLastRegistration(userId);
-  if (!reg?.slot) return ctx.reply("Нет данных о регистрации.");
+  if (!reg?.slot) return ctx.editMessageText("Нет данных о регистрации.");
   setSlotConfirmed(reg.slot);
-  return ctx.reply("Спасибо, что подтвердили участие в экскурсии!");
+  return ctx.editMessageText("Спасибо, что подтвердили участие в экскурсии!");
 });
 
 bot.action("reminder_cancel", (ctx) => {
   ctx.answerCbQuery();
   const userId = ctx.from?.id;
-  if (!userId) return ctx.reply("Ошибка.");
+  if (!userId) return ctx.editMessageText("Ошибка.");
   const reg = getLastRegistration(userId);
-  if (!reg?.slot) return ctx.reply("Нет данных о регистрации.");
+  if (!reg?.slot) return ctx.editMessageText("Нет данных о регистрации.");
   setSlotAvailable(reg.slot);
-  return ctx.reply(
+  return ctx.editMessageText(
     "Вы отменили участие. Слот снова доступен для записи."
   );
 });
 
 bot.action("reminder_change", (ctx) => {
   ctx.answerCbQuery();
-  return ctx.reply(
+  return ctx.editMessageText(
     "Если вы хотите изменить дату или время экскурсии, пройдите запись заново: меню → Расписание."
   );
 });
@@ -756,7 +745,7 @@ bot.command("visiting_rules", (ctx) =>
 
 bot.action("rules_ack", (ctx) => {
   ctx.answerCbQuery("Спасибо! Правила посещения офиса приняты.");
-  return ctx.reply("Спасибо! Правила посещения офиса приняты.");
+  return ctx.editMessageReplyMarkup(undefined);
 });
 
 
@@ -1218,7 +1207,7 @@ bot.action("group_leader_confirm", async (ctx) => {
   ctx.answerCbQuery();
 
   if (!data) {
-    return ctx.reply(
+    return ctx.editMessageText(
       "Не удалось найти данные регистрации. Пожалуйста, начните заново: меню → Расписание → Руководитель группы."
     );
   }
@@ -1263,7 +1252,7 @@ bot.action("group_leader_confirm", async (ctx) => {
   const summary = formatRegistrationSummary(data);
   resetSession(ctx);
 
-  return ctx.reply(
+  return ctx.editMessageText(
     `Заявка руководителя группы подтверждена!\n\n${summary}\n\nСпасибо, что записались на экскурсию.`
   );
 });
@@ -1275,7 +1264,7 @@ bot.action("student_data_verification", async (ctx) => {
   ctx.answerCbQuery();
 
   if (!data) {
-    return ctx.reply(
+    return ctx.editMessageText(
       "Не удалось найти данные регистрации. Пожалуйста, начните заново: меню → Расписание → Студент вуза."
     );
   }
@@ -1316,11 +1305,12 @@ bot.action("student_data_verification", async (ctx) => {
   const summary = formatRegistrationSummary(data);
   resetSession(ctx);
 
-  return ctx.reply(
+  return ctx.editMessageText(
     `Заявка подтверждена!\n\n${summary}\n\nСпасибо, что записались на экскурсию.`
   );
 });
 
+// Команда для повторного показа панели администратора
 bot.command("admin_info", (ctx) => {
   if (!isAdmin(ctx)) {
     return ctx.reply(
@@ -1330,7 +1320,7 @@ bot.command("admin_info", (ctx) => {
   return ctx.reply(adminInfoText);
 });
 
-// Экспорт данных в Excel по слоту
+// Экспорт данных в Excel по слоту (только для администратора)
 bot.command("export_student", async (ctx) => {
   if (!isAdmin(ctx)) {
     return ctx.reply(
