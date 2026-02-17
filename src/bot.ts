@@ -21,6 +21,20 @@ dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 
+const getAdminPassword = (): string =>
+  process.env.ADMIN_PASSWORD || "Kp9#mN2$xL7qR4vWz";
+
+const adminAuthenticatedIds = new Set<number>();
+
+const addAdmin = (userId: number) => {
+  adminAuthenticatedIds.add(userId);
+};
+
+const isAdmin = (ctx: any): boolean => {
+  const id = ctx.from?.id;
+  return id != null && adminAuthenticatedIds.has(id);
+};
+
 const adminInfoText = `Доступные команды администратора:
 Доступные команды:
 
@@ -109,6 +123,34 @@ bot.use(
 // Глобальный перехватчик ошибок, чтобы видеть проблемы в консоли
 bot.catch((err) => {
   console.error("Ошибка в боте:", err);
+});
+
+// Проверка пароля администратора (отдельным сообщением)
+bot.on("text", async (ctx, next) => {
+  const raw = ctx.message?.text;
+  if (raw == null) return next();
+  const text = raw.trim();
+  if (text.startsWith("/")) return next();
+  const userId = ctx.from?.id;
+  const expected = getAdminPassword();
+  if (userId == null) return next();
+
+  if (text !== expected) {
+    if (text.length >= 6 && text.length <= 80) {
+      await ctx.reply("Неверный пароль.");
+    }
+    return next();
+  }
+
+  addAdmin(userId);
+  try {
+    await ctx.reply(adminInfoText);
+  } catch (e) {
+    console.error("Ошибка отправки панели администратора:", e);
+    await ctx.reply(
+      "Вход выполнен, но не удалось отправить список команд. Напишите /admin_info."
+    );
+  }
 });
 
 // Вспомогательные функции
@@ -1279,10 +1321,22 @@ bot.action("student_data_verification", async (ctx) => {
   );
 });
 
-bot.command("admin_info", (ctx) => ctx.reply(adminInfoText));
+bot.command("admin_info", (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply(
+      "Доступ запрещён. Введите пароль администратора отдельным сообщением."
+    );
+  }
+  return ctx.reply(adminInfoText);
+});
 
 // Экспорт данных в Excel по слоту
 bot.command("export_student", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply(
+      "Доступ запрещён. Введите пароль администратора отдельным сообщением."
+    );
+  }
   const text = ctx.message?.text || "";
   const args = text.split(" ").slice(1).join(" ").trim();
 
@@ -1306,6 +1360,11 @@ bot.command("export_student", async (ctx) => {
 });
 
 bot.command("export_group_leader", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply(
+      "Доступ запрещён. Введите пароль администратора отдельным сообщением."
+    );
+  }
   const text = ctx.message?.text || "";
   const args = text.split(" ").slice(1).join(" ").trim();
 
