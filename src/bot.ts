@@ -38,7 +38,7 @@ dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 // ID супергруппы поддержки с топиками
-const SUPPORT_CHAT_ID = -3751564165;
+const SUPPORT_CHAT_ID = -1003751564165;
 
 const getAdminPassword = (): string => "Kp9#mN2$xL7qR4vWz";
 
