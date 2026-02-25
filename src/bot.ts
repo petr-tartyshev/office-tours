@@ -25,10 +25,20 @@ import {
   exportUsersToExcel,
   getAllUsers,
 } from "./users-store";
+import {
+  createSupportThread,
+  findThreadByTopic,
+  getActiveThreadForUser,
+  getSupportThreadById,
+  updateSupportThread,
+  closeSupportThread,
+} from "./support-store";
 
 dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
+// ID супергруппы поддержки с топиками
+const SUPPORT_CHAT_ID = 3751564165;
 
 const getAdminPassword = (): string => "Kp9#mN2$xL7qR4vWz";
 
@@ -125,6 +135,8 @@ interface SessionData {
   flow?: RegistrationFlow;
   step?: RegistrationStep;
   data?: RegistrationData;
+  // Состояние диалога поддержки
+  supportMode?: "awaiting_first" | "active";
 }
 const bot = new Telegraf(token as string);
 
@@ -685,11 +697,15 @@ bot.command("faq", (ctx) =>
 );
 
 bot.command("question", (ctx) =>
-  ctx.reply(
-    "Напишите свой вопрос в чат, менеджер ответит в ближайшее время",
-    Markup.removeKeyboard()
-  )
-);
+  {
+    const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+    s.supportMode = "awaiting_first";
+    (ctx as any).session = s;
+    return ctx.reply(
+      "Напишите ваш вопрос в чат, менеджер обработает его в ближайшее время и вернётся с ответом.",
+      Markup.removeKeyboard()
+    );
+  });
 
 const reminderKeyboard = Markup.inlineKeyboard([
   [Markup.button.callback("Подтвердить", "reminder_confirm")],
@@ -732,6 +748,70 @@ async function sendPostRegistrationMailings(
   } catch (e) {
     console.error("Ошибка рассылки после регистрации:", e);
   }
+}
+
+async function handleUserSupportMessage(
+  ctx: any,
+  userId: number,
+  text: string,
+  mode: "awaiting_first" | "active"
+): Promise<void> {
+  if (!SUPPORT_CHAT_ID) {
+    console.error("SUPPORT_CHAT_ID is not настроен в ENV");
+    return;
+  }
+
+  const session = (ctx as any).session as SessionData;
+
+  let thread = getActiveThreadForUser(userId);
+
+  if (!thread || mode === "awaiting_first") {
+    const nick = formatUserNick(ctx);
+    let topicId: number;
+    try {
+      const topic: any = await ctx.telegram.createForumTopic(
+        SUPPORT_CHAT_ID,
+        nick
+      );
+      topicId = topic.message_thread_id;
+    } catch (e) {
+      console.error("Не удалось создать топик для поддержки:", e);
+      return;
+    }
+
+    const adminMsg = await ctx.telegram.sendMessage(
+      SUPPORT_CHAT_ID,
+      `Новый вопрос от ${nick} (id=${userId}):\n\n${text}`,
+      { message_thread_id: topicId }
+    );
+
+    thread = createSupportThread({
+      userId,
+      username: ctx.from?.username,
+      adminChatId: SUPPORT_CHAT_ID,
+      adminTopicId: topicId,
+      firstUserMessageId: adminMsg.message_id,
+    });
+
+    session.supportMode = "active";
+    (ctx as any).session = session;
+
+    await ctx.reply(
+      "Ваш вопрос отправлен менеджеру. Мы ответим в ближайшее время."
+    );
+    return;
+  }
+
+  const adminMsg = await ctx.telegram.sendMessage(
+    thread.adminChatId,
+    `Сообщение от ${formatUserNick(ctx)} (id=${userId}) в диалоге ${thread.id}:\n\n${text}`,
+    { message_thread_id: thread.adminTopicId }
+  );
+
+  updateSupportThread(thread.id, {
+    status: "waiting",
+    lastUserMessageId: adminMsg.message_id,
+  });
 }
 
 bot.command("reminder_3day", (ctx) => {
@@ -804,8 +884,11 @@ bot.action("reminder_change", (ctx) => {
 
 bot.action("reminder_question", (ctx) => {
   ctx.answerCbQuery();
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.supportMode = "awaiting_first";
+  (ctx as any).session = s;
   return ctx.reply(
-    "Напишите свой вопрос в чат, менеджер ответит в ближайшее время"
+    "Напишите ваш вопрос в чат, менеджер обработает его в ближайшее время и вернётся с ответом."
   );
 });
 
@@ -864,6 +947,20 @@ bot.command("death", async (ctx) => {
 // Обработка шагов регистрации (студент и руководитель группы)
 bot.on("text", async (ctx, next) => {
   const s = (ctx as any).session as SessionData | undefined;
+
+  // Диалог поддержки: перенаправляем сообщения менеджерам
+  if (s?.supportMode === "awaiting_first" || s?.supportMode === "active") {
+    const text = ctx.message.text.trim();
+    try {
+      const userId = ctx.from?.id;
+      if (userId && SUPPORT_CHAT_ID) {
+        await handleUserSupportMessage(ctx, userId, text, s.supportMode);
+      }
+    } catch (e) {
+      console.error("Ошибка обработки сообщения поддержки:", e);
+    }
+    return;
+  }
 
   if (!s || !s.flow || !s.step) {
     return next();
@@ -1432,6 +1529,96 @@ bot.command("export_student", async (ctx) => {
     source: fs.createReadStream(filePath),
     filename: path.basename(filePath),
   });
+});
+
+// Обработка сообщений менеджеров в чате поддержки (супергруппа с топиками)
+bot.on("message", async (ctx, next) => {
+  if (!SUPPORT_CHAT_ID || ctx.chat?.id !== SUPPORT_CHAT_ID) {
+    return next();
+  }
+
+  const msg: any = ctx.message;
+  if (!msg || typeof msg.message_thread_id !== "number") {
+    return next();
+  }
+
+  // интересуют только ответы живых людей, не бота
+  if (ctx.from?.is_bot) {
+    return next();
+  }
+
+  if (!msg.text) {
+    return next();
+  }
+
+  const thread = findThreadByTopic(SUPPORT_CHAT_ID, msg.message_thread_id);
+  if (!thread) {
+    return next();
+  }
+
+  try {
+    await ctx.telegram.sendMessage(
+      thread.userId,
+      `Ответ менеджера:\n\n${msg.text}`,
+      Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "Завершить диалог",
+            `support_close_${thread.id}`
+          ),
+          Markup.button.callback(
+            "Продолжить",
+            `support_continue_${thread.id}`
+          ),
+        ],
+      ])
+    );
+
+    updateSupportThread(thread.id, {
+      status: "answered",
+      lastAdminMessageId: msg.message_id,
+    });
+  } catch (e) {
+    console.error(
+      "Ошибка отправки ответа пользователю из чата поддержки:",
+      e
+    );
+  }
+});
+
+bot.action(/support_close_(.+)/, (ctx) => {
+  const threadId = ctx.match[1];
+  const thread = getSupportThreadById(threadId);
+  if (!thread || ctx.from?.id !== thread.userId) {
+    return ctx.answerCbQuery();
+  }
+
+  closeSupportThread(threadId);
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.supportMode = undefined;
+  (ctx as any).session = s;
+
+  ctx.answerCbQuery("Диалог завершён.");
+  return ctx.reply(
+    "Диалог завершён. Если захотите задать новый вопрос, нажмите «Задать вопрос» в меню."
+  );
+});
+
+bot.action(/support_continue_(.+)/, (ctx) => {
+  const threadId = ctx.match[1];
+  const thread = getSupportThreadById(threadId);
+  if (!thread || ctx.from?.id !== thread.userId) {
+    return ctx.answerCbQuery();
+  }
+
+  updateSupportThread(threadId, { status: "waiting" });
+
+  const s = ((ctx as any).session || ({} as SessionData)) as SessionData;
+  s.supportMode = "active";
+  (ctx as any).session = s;
+
+  ctx.answerCbQuery("Можете задать следующий вопрос.");
+  return ctx.reply("Напишите ваш следующий вопрос в чат.");
 });
 
 bot.command("export_group_leader", async (ctx) => {
